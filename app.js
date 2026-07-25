@@ -2551,30 +2551,13 @@ async function openPrintOverlay(btn){
     alert("Chưa có dữ liệu để in");
     return;
   }
-  const output = el("printOverlayText");
-  const date = el("printOverlayDate");
-  const amount = el("printOverlayAmount");
-  const head = el("printOverlayHead");
-  const overlay = el("printOverlay");
-  const view = splitPrintOverlayText(text);
-  if(date) date.textContent = view.date;
-  if(output) output.textContent = view.body;
-  if(amount){
-    amount.textContent = view.amount;
-    amount.hidden = !view.amount;
-  }
-  if(head) head.hidden = !(view.date || view.amount);
-  if(overlay){
-    overlay.dataset.copyText = text;
-    overlay.hidden = false;
-    overlay.scrollTop = 0;
-  }
 
   try{
     await navigator.clipboard.writeText(text);
     if(btn) flashActionButton(btn, "Đã sao chép", "In");
   }catch(e){
-    if(btn) flashActionButton(btn, "Đã mở", "In");
+    alert("Không sao chép tự động được, anh thử bấm lại hoặc cấp quyền sao chép cho Safari nhé");
+    if(btn) flashActionButton(btn, "Chưa sao chép", "In");
   }
 }
 function closePrintOverlay(){
@@ -5218,7 +5201,7 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0601 = Object.assign(
 );
 
 window.SEQUENCE_APP_LOADED = true;
-/* v0.6.07 / cache5682 — GIỮ NGUYÊN DÒNG XỬ LÝ; CHỈ IN GIỚI HẠN 22; IN MỘT CHẠM
+/* v0.6.08 / cache5683 — GIỮ NGUYÊN DÒNG XỬ LÝ; CHỈ IN GIỚI HẠN 22; IN MỘT CHẠM
    - Đã xóa nút và panel Đối chiếu khỏi giao diện.
    - Ngày A/B/C dùng trực tiếp dữ liệu đã lưu của chính vùng; không đưa lại vào input.
    - Máy Đối chiếu chạy ngầm theo từng dòng trong đúng ngữ cảnh tiêu đề vùng/đài.
