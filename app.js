@@ -856,7 +856,7 @@ function buildCopyFast(blocks, total){
   for(const block of blocks){
     out.push(block.name);
     for(const rawLine of groupDuplicateSuffixLines(block.lines)){
-      out.push(...splitCopyLineOriginal(rawLine, 20));
+      out.push(...splitCopyLineOriginal(rawLine, 22));
     }
     out.push("");
   }
@@ -869,7 +869,7 @@ function renderObj(obj){
     if(!lines.length) continue;
     out.push(block);
     for(const line of groupDuplicateSuffixLines(lines)){
-      out.push(...splitTachDisplayLine(line, 20));
+      out.push(line);
     }
     out.push("");
   }
@@ -1562,7 +1562,7 @@ function buildTach(blocks){
 
       if(!lines.length) continue;
       out.push(compactMultiSourceLabel(block));
-      mergePairWithSameValueLines(groupDuplicateSuffixLines(lines)).forEach(line => out.push(...splitTachDisplayLine(line, 20)));
+      mergePairWithSameValueLines(groupDuplicateSuffixLines(lines)).forEach(line => out.push(line));
       out.push("");
     }
     return out.join("\n").trim();
@@ -2543,7 +2543,7 @@ function splitPrintOverlayText(text){
     amount
   };
 }
-function openPrintOverlay(btn){
+async function openPrintOverlay(btn){
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
   if(val("inputData").trim()) runAll();
   const text = val("printOutput").trim();
@@ -2569,7 +2569,13 @@ function openPrintOverlay(btn){
     overlay.hidden = false;
     overlay.scrollTop = 0;
   }
-  if(btn) flashActionButton(btn, "Đã mở", "In");
+
+  try{
+    await navigator.clipboard.writeText(text);
+    if(btn) flashActionButton(btn, "Đã sao chép", "In");
+  }catch(e){
+    if(btn) flashActionButton(btn, "Đã mở", "In");
+  }
 }
 function closePrintOverlay(){
   const overlay = el("printOverlay");
@@ -4100,7 +4106,7 @@ function buildCopyFast(blocks, total){
   for(const block of (blocks || [])){
     out.push(canonicalPrintBlockName(block));
     for(const rawLine of groupDuplicateSuffixLines(block.lines || [])){
-      out.push(...splitCopyLineOriginal(rawLine, 20));
+      out.push(...splitCopyLineOriginal(rawLine, 22));
     }
     out.push("");
   }
@@ -4384,7 +4390,7 @@ const LEGACY_TYPE_TOKEN_RE = "(bdao|xcdao|xcdau|xcduoi|duoi|dau|dd|dv|da|b|xc)";
   if(typeof baseBuildTach === "function"){
     global.buildTach = function(){
       const result = baseBuildTach.apply(this,arguments) || {};
-      return {...result, tach:splitCompositeText(result.tach), khong:splitCompositeText(result.khong)};
+      return {...result, tach:String(result.tach || "").trim(), khong:String(result.khong || "").trim()};
     };
   }
 
@@ -5212,7 +5218,7 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0601 = Object.assign(
 );
 
 window.SEQUENCE_APP_LOADED = true;
-/* v0.6.06 / cache5681 — ÁP MÁY XÉT NGẦM CHO NGÀY A/B/C
+/* v0.6.07 / cache5682 — GIỮ NGUYÊN DÒNG XỬ LÝ; CHỈ IN GIỚI HẠN 22; IN MỘT CHẠM
    - Đã xóa nút và panel Đối chiếu khỏi giao diện.
    - Ngày A/B/C dùng trực tiếp dữ liệu đã lưu của chính vùng; không đưa lại vào input.
    - Máy Đối chiếu chạy ngầm theo từng dòng trong đúng ngữ cảnh tiêu đề vùng/đài.
@@ -5220,7 +5226,7 @@ window.SEQUENCE_APP_LOADED = true;
    - Dòng không phù hợp giữ nguyên; không tạo vùng kết quả phụ; dữ liệu localStorage gốc không đổi.
    - Mỗi ngày dùng đúng dữ liệu vùng và bộ Tham chiếu tương ứng; không lẫn A/B/C.
 */
-const DAILY_A_INLINE_MATCH_BUILD_V0604 = "Xử lý dữ liệu chuỗi v0.6.06 — áp máy xét ngầm cho Ngày A/B/C — bộ nhớ đệm 5681";
+const DAILY_A_INLINE_MATCH_BUILD_V0604 = "Xử lý dữ liệu chuỗi v0.6.07 — giữ nguyên dòng; In 22 ký tự và sao chép một chạm — bộ nhớ đệm 5682";
 
 function dailyAInlineRowsV0604(headerLine, dataLine){
   const source = [String(headerLine || "").trim(), String(dataLine || "").trim()]
