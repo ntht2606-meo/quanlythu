@@ -1,63 +1,268 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f7f8" />
   <meta name="robots" content="noindex,nofollow" />
-  <title>QuanLyThuong</title>
+  <title>QuanLyThuong OS</title>
   <style>
-    *{box-sizing:border-box}
-    html,body{min-height:100%}
-    body{margin:0;background:#f4f6f8;color:#111;font-family:Arial,Helvetica,sans-serif}
-    .wrap{min-height:100vh;display:grid;place-items:center;padding:20px}
-    .card{width:min(560px,100%);background:#fff;border:2px solid #111;border-radius:18px;padding:22px;box-shadow:0 12px 30px rgba(0,0,0,.08)}
-    h1{margin:0 0 8px;font-size:30px}
-    .sub{margin:0 0 18px;color:#555;font-weight:700}
-    .account{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:2px solid #d5d5d5;border-radius:12px;margin-bottom:18px}
-    .account strong{display:block}
-    .account small{color:#666}
-    .logout{width:auto;margin:0;padding:9px 12px;border:2px solid #111;background:#fff;color:#111;border-radius:10px;font-weight:800;cursor:pointer}
-    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-    .tile{display:flex;min-height:96px;align-items:center;justify-content:center;text-align:center;text-decoration:none;border:2px solid #111;border-radius:14px;background:#fff;color:#111;font-size:20px;font-weight:900;padding:14px}
-    .tile.primary{background:#111;color:#fff}
-    .tile.disabled{border-color:#bbb;color:#888;background:#eee;cursor:not-allowed}
-    .note{margin-top:16px;padding:12px;border-radius:12px;background:#f1f1f1;font-size:14px;line-height:1.45}
-    @media(max-width:520px){.grid{grid-template-columns:1fr}.card{padding:18px}h1{font-size:26px}.tile{min-height:76px}}
+    :root{
+      --bg:#f7f7f8;
+      --panel:rgba(255,255,255,.95);
+      --text:#202123;
+      --muted:#6b7280;
+      --line:#e2e5e9;
+      --accent:#10a37f;
+      --accent-soft:#e8f7f2;
+      --warning:#fff4d6;
+      --radius:22px;
+      --shadow:0 10px 30px rgba(15,23,42,.07);
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html{background:var(--bg)}
+    body{
+      margin:0;
+      min-height:100vh;
+      min-height:100dvh;
+      color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
+      background:
+        radial-gradient(circle at top right,rgba(16,163,127,.07),transparent 34%),
+        linear-gradient(180deg,#fff 0%,#f7f7f8 100%);
+    }
+    button,a{font:inherit}
+    .screen{
+      min-height:100vh;
+      min-height:100dvh;
+      padding:
+        calc(env(safe-area-inset-top) + 14px)
+        14px
+        calc(env(safe-area-inset-bottom) + 28px);
+    }
+    .app{width:min(100%,430px);margin:0 auto}
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:18px;
+    }
+    .brand small{
+      display:block;
+      color:var(--accent);
+      font-size:13px;
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      margin-bottom:4px;
+    }
+    .brand h1{
+      margin:0;
+      font-size:28px;
+      line-height:1.05;
+      letter-spacing:-.03em;
+    }
+    .logout-btn{
+      min-height:44px;
+      padding:0 14px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      color:#4b5563;
+      background:rgba(255,255,255,.88);
+      font-size:13px;
+      font-weight:800;
+      box-shadow:0 6px 20px rgba(15,23,42,.05);
+    }
+    .hero{
+      padding:22px;
+      border:1px solid var(--line);
+      border-radius:28px;
+      background:linear-gradient(145deg,rgba(255,255,255,.99),rgba(249,250,251,.99));
+      box-shadow:var(--shadow);
+      margin-bottom:16px;
+    }
+    .hero .eyebrow{
+      color:var(--muted);
+      font-size:14px;
+      font-weight:700;
+      margin-bottom:8px;
+    }
+    .hero h2{
+      margin:0 0 10px;
+      font-size:30px;
+      line-height:1.05;
+      letter-spacing:-.04em;
+    }
+    .hero p{
+      margin:0;
+      color:var(--muted);
+      font-size:16px;
+      line-height:1.45;
+    }
+    .section-title{
+      display:flex;
+      align-items:end;
+      justify-content:space-between;
+      gap:12px;
+      margin:22px 2px 10px;
+    }
+    .section-title h3{margin:0;font-size:19px}
+    .section-title span{color:var(--muted);font-size:13px}
+    .modules{display:grid;gap:12px}
+    .module{
+      width:100%;
+      min-height:118px;
+      padding:18px;
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      background:var(--panel);
+      color:var(--text);
+      text-decoration:none;
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      align-items:center;
+      gap:14px;
+      box-shadow:0 8px 24px rgba(15,23,42,.05);
+    }
+    .module:active{transform:scale(.985)}
+    .module.primary{
+      min-height:148px;
+      border-color:rgba(16,163,127,.25);
+      background:linear-gradient(145deg,var(--accent-soft),rgba(255,255,255,.99) 62%);
+    }
+    .module h4{margin:0 0 7px;font-size:22px;letter-spacing:-.02em}
+    .module.primary h4{font-size:27px}
+    .module p{margin:0;color:var(--muted);font-size:14px;line-height:1.4}
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      min-height:30px;
+      margin-top:12px;
+      padding:0 10px;
+      border-radius:999px;
+      color:#fff;
+      background:var(--accent);
+      font-size:12px;
+      font-weight:850;
+    }
+    .badge.soon{color:#6a4b00;background:var(--warning)}
+    .arrow{
+      display:grid;
+      place-items:center;
+      width:52px;
+      height:52px;
+      border-radius:17px;
+      background:#f5f6f7;
+      border:1px solid var(--line);
+      font-size:24px;
+      font-weight:700;
+    }
+    .module.primary .arrow{background:var(--accent);color:#fff;border-color:transparent}
+    .module.disabled{opacity:.78;cursor:default}
+    .module.disabled:active{transform:none}
+    .note{
+      margin-top:18px;
+      padding:16px;
+      border:1px dashed var(--line);
+      border-radius:18px;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.45;
+      background:rgba(255,255,255,.72);
+    }
+    @media(min-width:700px){
+      .screen{padding-left:24px;padding-right:24px}
+      .app{width:min(100%,720px)}
+      .modules{grid-template-columns:1fr 1fr}
+      .module.primary{grid-column:1/-1}
+    }
+    @media(prefers-reduced-motion:no-preference){
+      .module{transition:transform .12s ease,border-color .2s ease,box-shadow .2s ease}
+      .module:hover{border-color:#d5d9de;box-shadow:0 12px 32px rgba(15,23,42,.08)}
+    }
   </style>
 </head>
 <body>
-  <main class="wrap">
-    <section class="card" aria-labelledby="title">
-      <h1 id="title">QuanLyThuong</h1>
-      <p class="sub">Chọn khu vực làm việc</p>
-
-      <div class="account">
-        <div>
-          <strong>Tài khoản đã xác thực</strong>
-          <small>Quyền truy cập được kiểm soát bên ngoài mã nguồn.</small>
+  <section class="screen" aria-label="Trang điều hành">
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <small>Trung tâm vận hành</small>
+          <h1>QuanLyThuong OS</h1>
         </div>
-        <button class="logout" type="button" onclick="logout()">Đăng xuất</button>
+        <button class="logout-btn" type="button" onclick="logout()">Đăng xuất</button>
+      </header>
+
+      <section class="hero">
+        <div class="eyebrow">Tài khoản đã xác thực</div>
+        <h2>Chọn khu vực làm việc.</h2>
+        <p>Công cụ dùng thường xuyên được đặt ngay mặt tiền. Các mô-đun khác giữ sẵn để mở rộng từng bước.</p>
+      </section>
+
+      <div class="section-title">
+        <h3>Công cụ chính</h3>
+        <span>1 chạm để mở</span>
       </div>
 
-      <div class="grid">
-        <a class="tile primary" href="./index.html">Xử lý chuỗi</a>
-        <div class="tile disabled" aria-disabled="true">Thu chi<br>Đang xây dựng</div>
-        <div class="tile disabled" aria-disabled="true">Công nợ<br>Đang xây dựng</div>
-        <div class="tile disabled" aria-disabled="true">Khách hàng<br>Đang xây dựng</div>
-        <div class="tile disabled" aria-disabled="true">Báo cáo<br>Đang xây dựng</div>
-      </div>
+      <section class="modules" aria-label="Danh sách công cụ">
+        <a class="module primary" href="./index.html">
+          <div>
+            <h4>Xử lý chuỗi</h4>
+            <p>Mở công cụ đang vận hành trên nhánh chính.</p>
+            <span class="badge">Đang hoạt động</span>
+          </div>
+          <span class="arrow" aria-hidden="true">→</span>
+        </a>
+
+        <div class="module disabled" aria-disabled="true">
+          <div>
+            <h4>Thu chi</h4>
+            <p>Ghi nhận tiền vào, tiền ra và xem biến động trong ngày.</p>
+            <span class="badge soon">Sắp triển khai</span>
+          </div>
+          <span class="arrow" aria-hidden="true">＋</span>
+        </div>
+
+        <div class="module disabled" aria-disabled="true">
+          <div>
+            <h4>Công nợ</h4>
+            <p>Theo dõi tổng nợ, thay đổi mới và lịch sử từng người.</p>
+            <span class="badge soon">Sắp triển khai</span>
+          </div>
+          <span class="arrow" aria-hidden="true">＋</span>
+        </div>
+
+        <div class="module disabled" aria-disabled="true">
+          <div>
+            <h4>Khách hàng</h4>
+            <p>Lưu hồ sơ, phân nhóm và theo dõi tương tác.</p>
+            <span class="badge soon">Sắp triển khai</span>
+          </div>
+          <span class="arrow" aria-hidden="true">＋</span>
+        </div>
+
+        <div class="module disabled" aria-disabled="true">
+          <div>
+            <h4>Báo cáo</h4>
+            <p>Tổng hợp dữ liệu và chỉ số vận hành quan trọng.</p>
+            <span class="badge soon">Sắp triển khai</span>
+          </div>
+          <span class="arrow" aria-hidden="true">＋</span>
+        </div>
+      </section>
 
       <div class="note">
-        Trang này không lưu mật khẩu, mã bí mật hoặc danh sách Gmail trong mã nguồn. Việc đăng nhập và cho phép tài khoản phải được cấu hình tại lớp bảo vệ tên miền.
+        Quyền đăng nhập và danh sách Gmail được phép nằm ngoài mã nguồn. Trang này không lưu mật khẩu, mã bí mật, API key hoặc token.
       </div>
-    </section>
-  </main>
+    </main>
+  </section>
 
   <script>
     function logout(){
-      const host = location.hostname;
+      const host=location.hostname;
       if(host.endsWith('quanlythuong.com')){
-        location.href = 'https://' + host + '/cdn-cgi/access/logout';
+        location.href='https://'+host+'/cdn-cgi/access/logout';
         return;
       }
       alert('Đăng xuất thật sẽ hoạt động sau khi Cloudflare Access được bật cho quanlythuong.com.');
