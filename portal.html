@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>QuanLyThuong</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{min-height:100%}
+    body{margin:0;background:#f4f6f8;color:#111;font-family:Arial,Helvetica,sans-serif}
+    .wrap{min-height:100vh;display:grid;place-items:center;padding:20px}
+    .card{width:min(560px,100%);background:#fff;border:2px solid #111;border-radius:18px;padding:22px;box-shadow:0 12px 30px rgba(0,0,0,.08)}
+    h1{margin:0 0 8px;font-size:30px}
+    .sub{margin:0 0 18px;color:#555;font-weight:700}
+    .account{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:2px solid #d5d5d5;border-radius:12px;margin-bottom:18px}
+    .account strong{display:block}
+    .account small{color:#666}
+    .logout{width:auto;margin:0;padding:9px 12px;border:2px solid #111;background:#fff;color:#111;border-radius:10px;font-weight:800;cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .tile{display:flex;min-height:96px;align-items:center;justify-content:center;text-align:center;text-decoration:none;border:2px solid #111;border-radius:14px;background:#fff;color:#111;font-size:20px;font-weight:900;padding:14px}
+    .tile.primary{background:#111;color:#fff}
+    .tile.disabled{border-color:#bbb;color:#888;background:#eee;cursor:not-allowed}
+    .note{margin-top:16px;padding:12px;border-radius:12px;background:#f1f1f1;font-size:14px;line-height:1.45}
+    @media(max-width:520px){.grid{grid-template-columns:1fr}.card{padding:18px}h1{font-size:26px}.tile{min-height:76px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card" aria-labelledby="title">
+      <h1 id="title">QuanLyThuong</h1>
+      <p class="sub">Chọn khu vực làm việc</p>
+
+      <div class="account">
+        <div>
+          <strong>Tài khoản đã xác thực</strong>
+          <small>Quyền truy cập được kiểm soát bên ngoài mã nguồn.</small>
+        </div>
+        <button class="logout" type="button" onclick="logout()">Đăng xuất</button>
+      </div>
+
+      <div class="grid">
+        <a class="tile primary" href="./index.html">Xử lý chuỗi</a>
+        <div class="tile disabled" aria-disabled="true">Thu chi<br>Đang xây dựng</div>
+        <div class="tile disabled" aria-disabled="true">Công nợ<br>Đang xây dựng</div>
+        <div class="tile disabled" aria-disabled="true">Khách hàng<br>Đang xây dựng</div>
+        <div class="tile disabled" aria-disabled="true">Báo cáo<br>Đang xây dựng</div>
+      </div>
+
+      <div class="note">
+        Trang này không lưu mật khẩu, mã bí mật hoặc danh sách Gmail trong mã nguồn. Việc đăng nhập và cho phép tài khoản phải được cấu hình tại lớp bảo vệ tên miền.
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function logout(){
+      const host = location.hostname;
+      if(host.endsWith('quanlythuong.com')){
+        location.href = 'https://' + host + '/cdn-cgi/access/logout';
+        return;
+      }
+      alert('Đăng xuất thật sẽ hoạt động sau khi Cloudflare Access được bật cho quanlythuong.com.');
+    }
+  </script>
+</body>
+</html>
