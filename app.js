@@ -5327,3 +5327,231 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0606 = Object.assign(
     buildDailyRegionInlineDisplay:buildDailyAInlineDisplayV0604
   }
 );
+
+/* v0.6.09 / cache5684 — LỊCH SỬ THAO TÁC TRONG PHIÊN
+   - Quay lại: trở về trạng thái trước thao tác gần nhất.
+   - Tiến lên: phục hồi trạng thái vừa quay lại.
+   - Theo dõi dữ liệu A/B/C, tham chiếu, loại trừ, dữ liệu đã xử lý và các trường giao diện.
+   - Lịch sử chỉ tồn tại trong phiên trang hiện tại; tải lại trang sẽ tạo lịch sử mới.
+*/
+const HISTORY_LIMIT_V0609 = 60;
+const undoStackV0609 = [];
+const redoStackV0609 = [];
+let applyingHistoryV0609 = false;
+let historyReadyV0609 = false;
+let inputCommitTimerV0609 = null;
+
+function historyStorageV0609(){
+  const out = {};
+  try{
+    for(let i=0;i<localStorage.length;i+=1){
+      const key = localStorage.key(i);
+      if(!key) continue;
+      if(key.startsWith("sequence.v1.") || key.startsWith("pxso.v0.")){
+        out[key] = localStorage.getItem(key);
+      }
+    }
+  }catch(e){
+    console.error(e);
+  }
+  return out;
+}
+
+function historyControlsV0609(){
+  const out = {};
+  document.querySelectorAll("input[id], textarea[id], select[id]").forEach(node=>{
+    if(node.id === "undoBtnV0609" || node.id === "redoBtnV0609") return;
+    out[node.id] = {
+      value: String(node.value == null ? "" : node.value),
+      checked: !!node.checked
+    };
+  });
+  return out;
+}
+
+function historySnapshotV0609(){
+  try{ saveActiveWorkspaceInput(); }catch(e){ console.error(e); }
+  const activeTab = document.querySelector(".tab-btn.active")?.dataset?.tab || activeWorkspace || "MN";
+  return {
+    activeWorkspace: ["MN","MT","HN"].includes(activeWorkspace) ? activeWorkspace : "MN",
+    activeTab,
+    selectedDailyRegion: typeof selectedDailyRegionV0598 !== "undefined"
+      ? normalizeDailyRegionV0598(selectedDailyRegionV0598)
+      : "MN",
+    sessionInputs: {
+      MN:String(SESSION_WORKSPACE_INPUTS.MN || ""),
+      MT:String(SESSION_WORKSPACE_INPUTS.MT || ""),
+      HN:String(SESSION_WORKSPACE_INPUTS.HN || "")
+    },
+    controls:historyControlsV0609(),
+    storage:historyStorageV0609()
+  };
+}
+
+function historySignatureV0609(snapshot){
+  // Storage và vùng kết quả readonly vẫn được giữ để khôi phục chính xác,
+  // nhưng không tự tạo thêm một “bước” khi máy tính nội bộ chỉ cập nhật kết quả/cache.
+  const editableControls = {};
+  Object.entries(snapshot.controls || {}).forEach(([id,state])=>{
+    const node = el(id);
+    if(node && !node.readOnly) editableControls[id] = state;
+  });
+  return JSON.stringify({
+    activeWorkspace:snapshot.activeWorkspace,
+    activeTab:snapshot.activeTab,
+    selectedDailyRegion:snapshot.selectedDailyRegion,
+    sessionInputs:snapshot.sessionInputs,
+    controls:editableControls
+  });
+}
+
+function updateHistoryButtonsV0609(){
+  const undoBtn = el("undoBtnV0609");
+  const redoBtn = el("redoBtnV0609");
+  if(undoBtn) undoBtn.disabled = undoStackV0609.length <= 1;
+  if(redoBtn) redoBtn.disabled = redoStackV0609.length === 0;
+}
+
+function commitHistoryV0609(reason="change"){
+  if(!historyReadyV0609 || applyingHistoryV0609) return false;
+  const snapshot = historySnapshotV0609();
+  const signature = historySignatureV0609(snapshot);
+  const previous = undoStackV0609[undoStackV0609.length - 1];
+  if(previous && previous.signature === signature){
+    updateHistoryButtonsV0609();
+    return false;
+  }
+  undoStackV0609.push({snapshot, signature, reason});
+  if(undoStackV0609.length > HISTORY_LIMIT_V0609) undoStackV0609.shift();
+  redoStackV0609.length = 0;
+  updateHistoryButtonsV0609();
+  return true;
+}
+
+function restoreHistoryStorageV0609(storage){
+  try{
+    const keys = [];
+    for(let i=0;i<localStorage.length;i+=1){
+      const key = localStorage.key(i);
+      if(key && (key.startsWith("sequence.v1.") || key.startsWith("pxso.v0."))) keys.push(key);
+    }
+    keys.forEach(key=>localStorage.removeItem(key));
+    Object.entries(storage || {}).forEach(([key,value])=>{
+      if(value != null) localStorage.setItem(key, String(value));
+    });
+  }catch(e){
+    console.error(e);
+  }
+}
+
+function restoreHistoryControlsV0609(controls){
+  Object.entries(controls || {}).forEach(([id,state])=>{
+    const node = el(id);
+    if(!node) return;
+    node.value = state && state.value != null ? String(state.value) : "";
+    if("checked" in node) node.checked = !!(state && state.checked);
+  });
+}
+
+function applyHistorySnapshotV0609(snapshot){
+  if(!snapshot) return;
+  applyingHistoryV0609 = true;
+  try{
+    restoreHistoryStorageV0609(snapshot.storage);
+    SESSION_WORKSPACE_INPUTS.MN = String(snapshot.sessionInputs?.MN || "");
+    SESSION_WORKSPACE_INPUTS.MT = String(snapshot.sessionInputs?.MT || "");
+    SESSION_WORKSPACE_INPUTS.HN = String(snapshot.sessionInputs?.HN || "");
+    activeWorkspace = ["MN","MT","HN"].includes(snapshot.activeWorkspace)
+      ? snapshot.activeWorkspace
+      : "MN";
+    if(typeof selectedDailyRegionV0598 !== "undefined"){
+      selectedDailyRegionV0598 = normalizeDailyRegionV0598(snapshot.selectedDailyRegion || activeWorkspace);
+    }
+
+    const activeTab = snapshot.activeTab === "SETTINGS" ? "SETTINGS" : activeWorkspace;
+    setActiveTab(activeTab);
+    const workScreen = el("workScreen");
+    const settingsScreen = el("settingsScreen");
+    if(workScreen) workScreen.hidden = activeTab === "SETTINGS";
+    if(settingsScreen) settingsScreen.hidden = activeTab !== "SETTINGS";
+    closeActionPanels();
+    closeSettingsPanels();
+    syncRegionRelatedPanel();
+
+    // Khôi phục cuối cùng để giữ đúng cả dữ liệu nhập và các vùng kết quả tại thời điểm đã lưu.
+    restoreHistoryControlsV0609(snapshot.controls);
+    saveActiveWorkspaceInput();
+    scrollTextTop("inputData");
+  }catch(e){
+    console.error(e);
+  }finally{
+    applyingHistoryV0609 = false;
+    updateHistoryButtonsV0609();
+  }
+}
+
+function undoSequenceV0609(){
+  if(undoStackV0609.length <= 1) return;
+  clearTimeout(inputCommitTimerV0609);
+  const current = undoStackV0609.pop();
+  redoStackV0609.push(current);
+  const previous = undoStackV0609[undoStackV0609.length - 1];
+  applyHistorySnapshotV0609(previous && previous.snapshot);
+}
+
+function redoSequenceV0609(){
+  if(!redoStackV0609.length) return;
+  clearTimeout(inputCommitTimerV0609);
+  const next = redoStackV0609.pop();
+  undoStackV0609.push(next);
+  applyHistorySnapshotV0609(next.snapshot);
+}
+
+function scheduleInputHistoryV0609(){
+  if(!historyReadyV0609 || applyingHistoryV0609) return;
+  clearTimeout(inputCommitTimerV0609);
+  inputCommitTimerV0609 = setTimeout(()=>commitHistoryV0609("input"), 260);
+}
+
+window.addEventListener("DOMContentLoaded", ()=>{
+  // Chờ các bộ nạp dữ liệu cũ hoàn tất rồi mới lấy mốc đầu tiên.
+  setTimeout(()=>{
+    historyReadyV0609 = true;
+    commitHistoryV0609("initial");
+
+    document.addEventListener("input", event=>{
+      if(event.target && event.target.matches("input,textarea,select")) scheduleInputHistoryV0609();
+    });
+    document.addEventListener("change", event=>{
+      if(event.target && event.target.matches("input,textarea,select")){
+        clearTimeout(inputCommitTimerV0609);
+        commitHistoryV0609("change");
+      }
+    });
+
+    // Chụp mốc ngay trước nút, rồi chụp kết quả sau khi onclick hiện hành chạy xong.
+    document.addEventListener("click", event=>{
+      const button = event.target && event.target.closest ? event.target.closest("button") : null;
+      if(!button || button.id === "undoBtnV0609" || button.id === "redoBtnV0609") return;
+      clearTimeout(inputCommitTimerV0609);
+      commitHistoryV0609("before-button");
+      setTimeout(()=>commitHistoryV0609("after-button"), 0);
+    }, true);
+
+    updateHistoryButtonsV0609();
+  }, 0);
+});
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0609 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0606 || window.SEQUENCE_NEUTRAL_ENGINE_V0605 || {},
+  {
+    version:"0.6.09",
+    cache:"5684",
+    status:"THAY LÀM VIỆC MỚI BẰNG QUAY LẠI / TIẾN LÊN; LỊCH SỬ TRONG PHIÊN",
+    undo:undoSequenceV0609,
+    redo:redoSequenceV0609
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+

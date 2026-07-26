@@ -610,3 +610,44 @@ footer{
   }
 }
 
+/* v0.6.09 / cache5684 — thay “Làm việc mới” bằng Quay lại / Tiến lên */
+.main-tabs.history-tabs-v0609{
+  grid-template-columns:minmax(0,2fr) minmax(96px,1fr) minmax(96px,1fr);
+  align-items:stretch;
+}
+.history-btn-v0609{
+  min-height:64px;
+  margin:0;
+  padding:8px 6px;
+  border:2px solid #111;
+  border-radius:10px;
+  background:#fff;
+  color:#111;
+  font-size:16px;
+  line-height:1.08;
+}
+.history-btn-v0609:not(:disabled):active{
+  background:#d9d9d9;
+}
+.history-btn-v0609:disabled{
+  background:#e3e3e3;
+  color:#8a8a8a;
+  border-color:#9a9a9a;
+  cursor:not-allowed;
+  opacity:.78;
+}
+@media (max-width:560px){
+  .main-tabs.history-tabs-v0609{
+    grid-template-columns:minmax(0,1.7fr) minmax(82px,1fr) minmax(82px,1fr);
+    gap:6px;
+  }
+  .main-tabs.history-tabs-v0609 .main-tab{
+    font-size:19px;
+  }
+  .history-btn-v0609{
+    min-height:60px;
+    font-size:14px;
+    padding:7px 4px;
+  }
+}
+
