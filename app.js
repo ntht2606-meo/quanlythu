@@ -5554,4 +5554,145 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0609 = Object.assign(
   }
 );
 window.SEQUENCE_APP_LOADED = true;
+/* v0.6.10 / cache5685 — KHÓA CỘNG DỒN KHI DÁN MỘT LÔ INPUT DÀI
+   - Input có các mốc #1, #2... hoặc dấu --- được xem là một lô đầy đủ.
+   - Khi bấm Tách với lô đầy đủ, chỉ xét chính lô đang dán; không ghép vùng Đã xử lý cũ.
+   - Các dòng đánh dấu #n và --- chỉ là ranh giới lô, không được đưa vào parser.
+   - Xóa vùng Đã xử lý xóa cả khóa vùng hiện tại và khóa dùng chung từ bản cũ.
+   - Input ngắn không có mốc lô vẫn giữ đúng cơ chế cộng nối Đã xử lý + dữ liệu mới.
+*/
+const FULL_BATCH_ITEM_RE_V0610 = /^\s*#\d+\s*$/;
+const FULL_BATCH_SEPARATOR_RE_V0610 = /^\s*-{3,}\s*$/;
+
+function isFullBatchInputV0610(text){
+  const lines = String(text || "").replace(/\r/g, "").split("\n");
+  let itemCount = 0;
+  let separatorCount = 0;
+  for(const line of lines){
+    if(FULL_BATCH_ITEM_RE_V0610.test(line)) itemCount += 1;
+    if(FULL_BATCH_SEPARATOR_RE_V0610.test(line)) separatorCount += 1;
+  }
+  return itemCount >= 2 || (itemCount >= 1 && separatorCount >= 1);
+}
+
+function normalizeBatchInputV0610(text){
+  const lines = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const out = [];
+  let lastBlank = false;
+  for(const rawLine of lines){
+    if(FULL_BATCH_ITEM_RE_V0610.test(rawLine) || FULL_BATCH_SEPARATOR_RE_V0610.test(rawLine)){
+      if(out.length && !lastBlank){
+        out.push("");
+        lastBlank = true;
+      }
+      continue;
+    }
+    const isBlank = !String(rawLine || "").trim();
+    if(isBlank){
+      if(out.length && !lastBlank){
+        out.push("");
+        lastBlank = true;
+      }
+      continue;
+    }
+    out.push(String(rawLine).trim());
+    lastBlank = false;
+  }
+  while(out.length && !out[out.length - 1]) out.pop();
+  return out.join("\n").trim();
+}
+
+function currentInputData(){
+  return normalizeBatchInputV0610(val("inputData"));
+}
+
+function splitConditionInputData(){
+  const rawCurrent = normalizeStoredDataText(val("inputData"));
+  const current = normalizeBatchInputV0610(rawCurrent);
+  if(isFullBatchInputV0610(rawCurrent)) return current;
+  return joinProcessedAndCurrentInput(readProcessedSplitStorage(activeWorkspace), current);
+}
+
+function purgeProcessedSplitStorageV0610(region=activeWorkspace){
+  const targetRegion = normalizeProcessedRegionV0600(region);
+  try{
+    localStorage.removeItem(processedSplitRegionKeyV0600(targetRegion));
+    localStorage.removeItem(PROCESSED_SPLIT_STORAGE_KEY);
+    // Giữ dấu đã chuyển đổi để dữ liệu dùng chung cũ không thể tự nhập lại vào Vùng A.
+    localStorage.setItem(PROCESSED_SPLIT_MIGRATION_MARKER_V0600, "done");
+  }catch(e){
+    console.error(e);
+  }
+  if(targetRegion === activeWorkspace){
+    setVal("processedOutput", "");
+    setVal("unchangedOutput", "");
+  }
+  return "";
+}
+
+function clearProcessedSplitOutput(btn){
+  purgeProcessedSplitStorageV0610(activeWorkspace);
+  runAll();
+  if(btn) flashActionButton(btn, "Đã xóa sạch", "Xóa");
+}
+
+function openSplitPanelAndSave(){
+  try{
+    const region = normalizeProcessedRegionV0600(activeWorkspace);
+    const rawCurrent = normalizeStoredDataText(val("inputData"));
+    const currentText = normalizeBatchInputV0610(rawCurrent);
+    const batchMode = isFullBatchInputV0610(rawCurrent);
+    const conditionText = batchMode
+      ? currentText
+      : joinProcessedAndCurrentInput(readProcessedSplitStorage(region), currentText);
+
+    if(conditionText){
+      const blocks = splitBlocks(conditionText);
+      const tk = buildTach(blocks);
+
+      lastSplitDailySaveStatus = currentText
+        ? saveDailyRegionInputBackupV0598(region, currentText)
+        : "empty";
+
+      // Lô đầy đủ thay thế kết quả cũ; input ngắn vẫn cộng nối theo quy trình cũ.
+      const processed = writeProcessedSplitStorage(tk.tach, region);
+      const unchanged = normalizeStoredDataText(tk.khong);
+
+      setVal("inputData", unchanged);
+      setVal("processedOutput", processed);
+      setVal("unchangedOutput", unchanged);
+      saveActiveWorkspaceInput();
+      runAll();
+
+      setVal("processedOutput", processed);
+      setVal("unchangedOutput", unchanged);
+    }else{
+      lastSplitDailySaveStatus = "empty";
+      purgeProcessedSplitStorageV0610(region);
+      clearCalculatedViewsKeepProcessed();
+    }
+  }catch(err){
+    console.error(err);
+    lastSplitDailySaveStatus = "error";
+    setVal("inputValue", "Lỗi tách: " + (err && err.message ? err.message : err));
+  }
+
+  toggleActionPanel("split");
+  scrollTextTop("processedOutput");
+  scrollTextTop("unchangedOutput");
+}
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0610 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0609 || window.SEQUENCE_NEUTRAL_ENGINE_V0606 || {},
+  {
+    version:"0.6.10",
+    cache:"5685",
+    status:"LÔ INPUT DÀI KHÔNG GHÉP DỮ LIỆU ĐÃ XỬ LÝ CŨ; XÓA SẠCH KHÓA CŨ",
+    isFullBatchInput:isFullBatchInputV0610,
+    normalizeBatchInput:normalizeBatchInputV0610,
+    purgeProcessedSplitStorage:purgeProcessedSplitStorageV0610
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
 

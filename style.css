@@ -610,7 +610,7 @@ footer{
   }
 }
 
-/* v0.6.09 / cache5684 — thay “Làm việc mới” bằng Quay lại / Tiến lên */
+/* v0.6.10 / cache5685 — Quay lại / Tiến lên; khóa cộng dồn input lô dài */
 .main-tabs.history-tabs-v0609{
   grid-template-columns:minmax(0,2fr) minmax(96px,1fr) minmax(96px,1fr);
   align-items:stretch;
