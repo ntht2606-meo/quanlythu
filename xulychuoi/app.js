@@ -5696,3 +5696,15 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0610 = Object.assign(
 );
 window.SEQUENCE_APP_LOADED = true;
 
+
+/* v0.6.11 / cache5686 — đồng bộ giao diện với QuanLyThuong OS; không đổi logic xử lý */
+window.SEQUENCE_NEUTRAL_ENGINE_V0611 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0610 || window.SEQUENCE_NEUTRAL_ENGINE_V0609 || {},
+  {
+    version:"0.6.11",
+    cache:"5686",
+    status:"GIAO DIỆN ĐỒNG BỘ QUANLYTHUONG OS; GIỮ NGUYÊN LOGIC v0.6.10"
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
