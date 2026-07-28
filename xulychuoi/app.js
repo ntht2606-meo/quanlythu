@@ -2474,25 +2474,33 @@ function clearRun(){
   setVal("matchedValue","0");
   saveActiveWorkspaceInput();
 }
-async function copyText(id){
+async function copyText(id, btn){
   const text = val(id);
+  const fallback = btn ? (btn.dataset.actionFallbackV0612 || btn.textContent || "Sao chép") : "Sao chép";
   try{
     await navigator.clipboard.writeText(text);
+    if(btn) flashActionButton(btn, "✓ Đã sao chép", fallback);
     return true;
   }catch(e){
+    if(btn) flashActionButton(btn, "Không sao chép được", fallback, "error");
     alert("Không sao chép tự động được, anh chọn nội dung rồi sao chép thủ công nhé");
     return false;
   }
 }
-function flashActionButton(btn, text, fallback){
+function flashActionButton(btn, text, fallback, state="success"){
   if(!btn) return;
-  const old = btn.textContent || fallback || "";
+  const original = btn.dataset.actionFallbackV0612 || btn.textContent || fallback || "";
+  btn.dataset.actionFallbackV0612 = original;
+  if(btn._actionFlashTimerV0612) clearTimeout(btn._actionFlashTimerV0612);
   btn.textContent = text;
-  btn.classList.add("saved");
-  setTimeout(()=>{
-    btn.textContent = old || fallback || "";
-    btn.classList.remove("saved");
-  }, 900);
+  btn.classList.remove("saved", "action-failed-v0612");
+  btn.classList.add(state === "error" ? "action-failed-v0612" : "saved");
+  btn._actionFlashTimerV0612 = setTimeout(()=>{
+    btn.textContent = btn.dataset.actionFallbackV0612 || fallback || original;
+    btn.classList.remove("saved", "action-failed-v0612");
+    delete btn.dataset.actionFallbackV0612;
+    btn._actionFlashTimerV0612 = null;
+  }, 1000);
 }
 async function copyPrintFast(btn){
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -5708,3 +5716,67 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0611 = Object.assign(
   }
 );
 window.SEQUENCE_APP_LOADED = true;
+
+/* v0.6.12 / cache5687 — phản hồi nháy màu cho mọi nút; giữ nguyên logic v0.6.11 */
+const PRESS_FEEDBACK_SELECTOR_V0612 = "button, .portal-link, [role='button']";
+let lastPressControlV0612 = null;
+let lastPressAtV0612 = 0;
+
+function findPressControlV0612(target){
+  const control = target && target.closest ? target.closest(PRESS_FEEDBACK_SELECTOR_V0612) : null;
+  if(!control) return null;
+  if(control.matches("button:disabled") || control.getAttribute("aria-disabled") === "true") return null;
+  return control;
+}
+
+function triggerPressFeedbackV0612(control){
+  if(!control) return;
+  control.classList.remove("press-flash-v0612");
+  // Buộc trình duyệt khởi động lại animation khi anh bấm liên tiếp cùng một nút.
+  void control.offsetWidth;
+  control.classList.add("press-flash-v0612");
+  if(control._pressFeedbackTimerV0612) clearTimeout(control._pressFeedbackTimerV0612);
+  control._pressFeedbackTimerV0612 = setTimeout(()=>{
+    control.classList.remove("press-flash-v0612");
+    control._pressFeedbackTimerV0612 = null;
+  }, 380);
+}
+
+function handlePointerPressV0612(event){
+  const control = findPressControlV0612(event.target);
+  if(!control) return;
+  lastPressControlV0612 = control;
+  lastPressAtV0612 = Date.now();
+  triggerPressFeedbackV0612(control);
+}
+
+function handleKeyboardOrSyntheticClickV0612(event){
+  const control = findPressControlV0612(event.target);
+  if(!control) return;
+  const wasJustPressed = control === lastPressControlV0612 && (Date.now() - lastPressAtV0612) < 650;
+  if(!wasJustPressed) triggerPressFeedbackV0612(control);
+}
+
+(function installPressFeedbackV0612(){
+  if(typeof document === "undefined") return;
+  if(window.PointerEvent){
+    document.addEventListener("pointerdown", handlePointerPressV0612, true);
+  }else{
+    document.addEventListener("touchstart", handlePointerPressV0612, {capture:true, passive:true});
+    document.addEventListener("mousedown", handlePointerPressV0612, true);
+  }
+  document.addEventListener("click", handleKeyboardOrSyntheticClickV0612, true);
+})();
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0612 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0611 || window.SEQUENCE_NEUTRAL_ENGINE_V0610 || {},
+  {
+    version:"0.6.12",
+    cache:"5687",
+    status:"MỌI NÚT NHÁY MÀU NGAY KHI NHẬN LỆNH; NÚT SAO CHÉP BÁO KẾT QUẢ RÕ RÀNG",
+    triggerPressFeedback:triggerPressFeedbackV0612
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+

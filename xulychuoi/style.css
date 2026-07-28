@@ -579,3 +579,49 @@ footer{
   .action-rail button,.daily-region-shortcuts button{min-height:44px;font-size:13px}
   .daily-region-shortcuts{display:contents}
 }
+
+/* v0.6.12 / cache5687 — phản hồi tức thời cho toàn bộ nút bấm */
+@keyframes pressFlashV0612{
+  0%{
+    transform:scale(1);
+    filter:brightness(1) saturate(1);
+    outline-color:rgba(16,163,127,0);
+  }
+  35%{
+    transform:scale(.955);
+    filter:brightness(1.22) saturate(1.12);
+    outline-color:rgba(16,163,127,.72);
+    box-shadow:0 0 0 4px rgba(16,163,127,.24),0 10px 24px rgba(16,163,127,.22);
+  }
+  100%{
+    transform:scale(1);
+    filter:brightness(1) saturate(1);
+    outline-color:rgba(16,163,127,0);
+  }
+}
+button.press-flash-v0612,
+.portal-link.press-flash-v0612,
+[role="button"].press-flash-v0612{
+  touch-action:manipulation;
+  outline:2px solid transparent;
+  outline-offset:1px;
+  animation:pressFlashV0612 .34s ease-out both !important;
+  will-change:transform,filter,box-shadow;
+}
+button.action-failed-v0612{
+  background:#b42318 !important;
+  color:#fff !important;
+  box-shadow:0 7px 18px rgba(180,35,24,.22) !important;
+}
+button:disabled.press-flash-v0612,
+[aria-disabled="true"].press-flash-v0612{
+  animation:none !important;
+}
+@media(prefers-reduced-motion:reduce){
+  @keyframes pressFlashV0612{
+    0%{filter:brightness(1);outline-color:rgba(16,163,127,0)}
+    50%{filter:brightness(1.24);outline-color:rgba(16,163,127,.8);box-shadow:0 0 0 4px rgba(16,163,127,.24)}
+    100%{filter:brightness(1);outline-color:rgba(16,163,127,0)}
+  }
+}
+

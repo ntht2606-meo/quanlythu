@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>Xử lý dữ liệu chuỗi v0.6.11</title>
+  <title>Xử lý dữ liệu chuỗi v0.6.12</title>
 
   <style data-source="style.css">
 :root{
@@ -588,6 +588,50 @@ footer{
   .daily-region-shortcuts{display:contents}
 }
 
+/* v0.6.12 / cache5687 — phản hồi tức thời cho toàn bộ nút bấm */
+@keyframes pressFlashV0612{
+  0%{
+    transform:scale(1);
+    filter:brightness(1) saturate(1);
+    outline-color:rgba(16,163,127,0);
+  }
+  35%{
+    transform:scale(.955);
+    filter:brightness(1.22) saturate(1.12);
+    outline-color:rgba(16,163,127,.72);
+    box-shadow:0 0 0 4px rgba(16,163,127,.24),0 10px 24px rgba(16,163,127,.22);
+  }
+  100%{
+    transform:scale(1);
+    filter:brightness(1) saturate(1);
+    outline-color:rgba(16,163,127,0);
+  }
+}
+button.press-flash-v0612,
+.portal-link.press-flash-v0612,
+[role="button"].press-flash-v0612{
+  touch-action:manipulation;
+  outline:2px solid transparent;
+  outline-offset:1px;
+  animation:pressFlashV0612 .34s ease-out both !important;
+  will-change:transform,filter,box-shadow;
+}
+button.action-failed-v0612{
+  background:#b42318 !important;
+  color:#fff !important;
+  box-shadow:0 7px 18px rgba(180,35,24,.22) !important;
+}
+button:disabled.press-flash-v0612,
+[aria-disabled="true"].press-flash-v0612{
+  animation:none !important;
+}
+@media(prefers-reduced-motion:reduce){
+  @keyframes pressFlashV0612{
+    0%{filter:brightness(1);outline-color:rgba(16,163,127,0)}
+    50%{filter:brightness(1.24);outline-color:rgba(16,163,127,.8);box-shadow:0 0 0 4px rgba(16,163,127,.24)}
+    100%{filter:brightness(1);outline-color:rgba(16,163,127,0)}
+  }
+}
   </style>
 </head>
 <body>
@@ -686,7 +730,7 @@ footer{
         </div>
         <div class="panel-title-row">
           <span></span>
-          <button type="button" class="save-mini" onclick="copyText('dailyRegionOutput')">Sao chép</button>
+          <button type="button" class="save-mini" onclick="copyText('dailyRegionOutput', this)">Sao chép</button>
           <button type="button" class="save-mini gray-mini" onclick="clearSelectedDailyRegionV0598(this)">Xóa</button>
         </div>
         <textarea id="dailyRegionOutput" readonly placeholder="Chưa có dữ liệu trong ngày của vùng này..."></textarea>
@@ -717,12 +761,12 @@ footer{
               <button type="button" class="save-mini gray-mini" onclick="clearProcessedSplitOutput(this)">Xóa</button>
             </div>
             <textarea id="processedOutput" readonly></textarea>
-            <button type="button" onclick="copyText('processedOutput')">Sao chép phần đã xử lý</button>
+            <button type="button" onclick="copyText('processedOutput', this)">Sao chép phần đã xử lý</button>
           </div>
           <div>
             <label for="unchangedOutput">Giữ nguyên</label>
             <textarea id="unchangedOutput" readonly></textarea>
-            <button type="button" onclick="copyText('unchangedOutput')">Sao chép phần giữ nguyên</button>
+            <button type="button" onclick="copyText('unchangedOutput', this)">Sao chép phần giữ nguyên</button>
           </div>
         </div>
       </section>
@@ -829,7 +873,7 @@ footer{
       <textarea id="auditDetail" readonly placeholder="Dạng chữ của bảng trung gian..."></textarea>
     </section>
 
-    <footer>Xử lý dữ liệu chuỗi v0.6.11 — giao diện QuanLyThuong OS; giữ nguyên logic v0.6.10</footer>
+    <footer>Xử lý dữ liệu chuỗi v0.6.12 — mọi nút có phản hồi nháy màu; giữ nguyên logic v0.6.11</footer>
   </div>
   <section id="printOverlay" class="print-overlay" hidden>
     <div class="print-overlay-bar">
@@ -3322,25 +3366,33 @@ function clearRun(){
   setVal("matchedValue","0");
   saveActiveWorkspaceInput();
 }
-async function copyText(id){
+async function copyText(id, btn){
   const text = val(id);
+  const fallback = btn ? (btn.dataset.actionFallbackV0612 || btn.textContent || "Sao chép") : "Sao chép";
   try{
     await navigator.clipboard.writeText(text);
+    if(btn) flashActionButton(btn, "✓ Đã sao chép", fallback);
     return true;
   }catch(e){
+    if(btn) flashActionButton(btn, "Không sao chép được", fallback, "error");
     alert("Không sao chép tự động được, anh chọn nội dung rồi sao chép thủ công nhé");
     return false;
   }
 }
-function flashActionButton(btn, text, fallback){
+function flashActionButton(btn, text, fallback, state="success"){
   if(!btn) return;
-  const old = btn.textContent || fallback || "";
+  const original = btn.dataset.actionFallbackV0612 || btn.textContent || fallback || "";
+  btn.dataset.actionFallbackV0612 = original;
+  if(btn._actionFlashTimerV0612) clearTimeout(btn._actionFlashTimerV0612);
   btn.textContent = text;
-  btn.classList.add("saved");
-  setTimeout(()=>{
-    btn.textContent = old || fallback || "";
-    btn.classList.remove("saved");
-  }, 900);
+  btn.classList.remove("saved", "action-failed-v0612");
+  btn.classList.add(state === "error" ? "action-failed-v0612" : "saved");
+  btn._actionFlashTimerV0612 = setTimeout(()=>{
+    btn.textContent = btn.dataset.actionFallbackV0612 || fallback || original;
+    btn.classList.remove("saved", "action-failed-v0612");
+    delete btn.dataset.actionFallbackV0612;
+    btn._actionFlashTimerV0612 = null;
+  }, 1000);
 }
 async function copyPrintFast(btn){
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -6557,6 +6609,68 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0611 = Object.assign(
 );
 window.SEQUENCE_APP_LOADED = true;
 
+/* v0.6.12 / cache5687 — phản hồi nháy màu cho mọi nút; giữ nguyên logic v0.6.11 */
+const PRESS_FEEDBACK_SELECTOR_V0612 = "button, .portal-link, [role='button']";
+let lastPressControlV0612 = null;
+let lastPressAtV0612 = 0;
+
+function findPressControlV0612(target){
+  const control = target && target.closest ? target.closest(PRESS_FEEDBACK_SELECTOR_V0612) : null;
+  if(!control) return null;
+  if(control.matches("button:disabled") || control.getAttribute("aria-disabled") === "true") return null;
+  return control;
+}
+
+function triggerPressFeedbackV0612(control){
+  if(!control) return;
+  control.classList.remove("press-flash-v0612");
+  // Buộc trình duyệt khởi động lại animation khi anh bấm liên tiếp cùng một nút.
+  void control.offsetWidth;
+  control.classList.add("press-flash-v0612");
+  if(control._pressFeedbackTimerV0612) clearTimeout(control._pressFeedbackTimerV0612);
+  control._pressFeedbackTimerV0612 = setTimeout(()=>{
+    control.classList.remove("press-flash-v0612");
+    control._pressFeedbackTimerV0612 = null;
+  }, 380);
+}
+
+function handlePointerPressV0612(event){
+  const control = findPressControlV0612(event.target);
+  if(!control) return;
+  lastPressControlV0612 = control;
+  lastPressAtV0612 = Date.now();
+  triggerPressFeedbackV0612(control);
+}
+
+function handleKeyboardOrSyntheticClickV0612(event){
+  const control = findPressControlV0612(event.target);
+  if(!control) return;
+  const wasJustPressed = control === lastPressControlV0612 && (Date.now() - lastPressAtV0612) < 650;
+  if(!wasJustPressed) triggerPressFeedbackV0612(control);
+}
+
+(function installPressFeedbackV0612(){
+  if(typeof document === "undefined") return;
+  if(window.PointerEvent){
+    document.addEventListener("pointerdown", handlePointerPressV0612, true);
+  }else{
+    document.addEventListener("touchstart", handlePointerPressV0612, {capture:true, passive:true});
+    document.addEventListener("mousedown", handlePointerPressV0612, true);
+  }
+  document.addEventListener("click", handleKeyboardOrSyntheticClickV0612, true);
+})();
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0612 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0611 || window.SEQUENCE_NEUTRAL_ENGINE_V0610 || {},
+  {
+    version:"0.6.12",
+    cache:"5687",
+    status:"MỌI NÚT NHÁY MÀU NGAY KHI NHẬN LỆNH; NÚT SAO CHÉP BÁO KẾT QUẢ RÕ RÀNG",
+    triggerPressFeedback:triggerPressFeedbackV0612
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
   </script>
 </body>
 </html>
