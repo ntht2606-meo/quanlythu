@@ -5780,3 +5780,46 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0612 = Object.assign(
 );
 window.SEQUENCE_APP_LOADED = true;
 
+/* v0.6.13 / cache5688 — ưu tiên lịch ngày hiện tại khi tên nguồn xuất hiện ở nhiều ngày.
+   Phạm vi khóa:
+   - Chỉ sửa bước phân giải ngữ cảnh lịch cho sourceHints.
+   - Tên có trong lịch hôm nay phải dùng lịch hôm nay trước khi dò ngày khác.
+   - Sau khi xác định đúng ngữ cảnh, buildTach vẫn xét đầy đủ mọi điều kiện cũ.
+   - Không tự động đưa nguồn vào Đã xử lý và không thay giới hạn/phạm vi loại dữ liệu.
+*/
+function pickDayForGeneric(region, count, sourceHints=[]){
+  const map = region === "MT" ? REGION_B_SCHEDULE : REGION_A_SCHEDULE;
+  const hints = Array.from(new Set((sourceHints || []).filter(Boolean)));
+  const today = dayIndex();
+  const todaySources = map[today] || [];
+
+  if(hints.length){
+    const todayMatches = todaySources.length >= count &&
+      hints.every(source => todaySources.includes(source));
+    if(todayMatches) return today;
+
+    for(const [d, arr] of Object.entries(map)){
+      if(arr.length >= count && hints.every(source => arr.includes(source))){
+        return parseInt(d, 10);
+      }
+    }
+  }
+
+  if(todaySources.length >= count) return today;
+  for(const [d, arr] of Object.entries(map)){
+    if(arr.length >= count) return parseInt(d, 10);
+  }
+  return today;
+}
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0613 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0612 || window.SEQUENCE_NEUTRAL_ENGINE_V0611 || {},
+  {
+    version:"0.6.13",
+    cache:"5688",
+    status:"TÊN NGUỒN TRÙNG NHIỀU NGÀY ƯU TIÊN LỊCH HÔM NAY; ĐIỀU KIỆN XỬ LÝ GIỮ NGUYÊN",
+    pickDayForGeneric
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
