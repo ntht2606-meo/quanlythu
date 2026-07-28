@@ -1462,12 +1462,88 @@ function buildTach(blocks){
       });
       return lines;
     };
-    const mergePairWithSameValueLines = lines => {
+    const mergePairWithSameValueLines = (lines, block="") => {
+      const pairEntries = [];
       const pairByValues = new Map();
+
       lines.forEach((line, idx) => {
         const m = String(line || "").match(/^([0-9]+(?:\.[0-9]+)+)da[\d,.]+n$/i);
-        if(m) pairByValues.set(m[1], { line, idx });
+        if(!m) return;
+        const nums = m[1].split(".").filter(Boolean);
+        const entry = {line, idx, values:m[1], nums};
+        pairEntries.push(entry);
+        pairByValues.set(m[1], entry);
       });
+
+      // Vùng C: khi một dòng thường đã bị gom nhiều số nhưng các cặp DA vẫn
+      // còn tách riêng, ghép hậu tố thường trở lại đúng từng cặp.
+      // Ví dụ:
+      // 27.47.73.83b2n + 27.73da1n + 47.83da1n
+      // => 27.73da1n.b2n + 47.83da1n.b2n
+      if(block === "HN" && pairEntries.length){
+        const consumed = new Set();
+        const merged = [];
+
+        lines.forEach((line, idx) => {
+          if(consumed.has(idx)) return;
+          if(pairEntries.some(entry => entry.idx === idx)) return;
+
+          const m = String(line || "").match(/^([0-9]+(?:\.[0-9]+)*)([a-z].*)$/i);
+          if(!m){
+            merged.push(line);
+            return;
+          }
+
+          const suffix = m[2];
+          const suffixLower = suffix.toLowerCase();
+          if(suffixLower.startsWith("da") || suffixLower.startsWith("dv")){
+            merged.push(line);
+            return;
+          }
+
+          const remaining = m[1].split(".").filter(Boolean);
+          const usedPositions = new Set();
+          const matchedPairs = [];
+
+          pairEntries.forEach(entry => {
+            if(consumed.has(entry.idx)) return;
+            const localPositions = [];
+            let valid = true;
+
+            entry.nums.forEach(num => {
+              const pos = remaining.findIndex((value, position) =>
+                value === num && !usedPositions.has(position) && !localPositions.includes(position)
+              );
+              if(pos < 0) valid = false;
+              else localPositions.push(pos);
+            });
+
+            if(valid){
+              localPositions.forEach(position => usedPositions.add(position));
+              matchedPairs.push(entry);
+            }
+          });
+
+          if(!matchedPairs.length){
+            merged.push(line);
+            return;
+          }
+
+          matchedPairs.forEach(entry => {
+            merged.push(entry.line + "." + suffix);
+            consumed.add(entry.idx);
+          });
+
+          const leftover = remaining.filter((_, position) => !usedPositions.has(position));
+          if(leftover.length) merged.push(leftover.join(".") + suffix);
+        });
+
+        pairEntries.forEach(entry => {
+          if(!consumed.has(entry.idx)) merged.push(entry.line);
+        });
+
+        return merged;
+      }
 
       const consumed = new Set();
       const merged = [];
@@ -1562,7 +1638,7 @@ function buildTach(blocks){
 
       if(!lines.length) continue;
       out.push(compactMultiSourceLabel(block));
-      mergePairWithSameValueLines(groupDuplicateSuffixLines(lines)).forEach(line => out.push(line));
+      mergePairWithSameValueLines(groupDuplicateSuffixLines(lines), block).forEach(line => out.push(line));
       out.push("");
     }
     return out.join("\n").trim();
@@ -5896,3 +5972,21 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0614 = Object.assign(
   }
 );
 window.SEQUENCE_APP_LOADED = true;
+
+/* v0.6.15 / cache5690 — sửa vùng C giữ đúng từng cặp DA khi ghép hậu tố.
+   Phạm vi:
+   - Không cho dòng thường đã gom nhiều số làm mất quan hệ từng cặp DA.
+   - Ghép hậu tố trở lại từng cặp và đưa DA lên trước.
+   - Không đổi parser, mapping, công thức, LocalStorage, Undo/Redo hoặc CSS.
+*/
+window.SEQUENCE_NEUTRAL_ENGINE_V0615 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0614 || window.SEQUENCE_NEUTRAL_ENGINE_V0613 || {},
+  {
+    version:"0.6.15",
+    cache:"5690",
+    status:"VÙNG C GIỮ ĐÚNG TỪNG CẶP DA; KHÔNG GOM SAI THÀNH MỘT DÒNG NHIỀU SỐ"
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+
