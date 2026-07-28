@@ -5823,3 +5823,76 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0613 = Object.assign(
   }
 );
 window.SEQUENCE_APP_LOADED = true;
+
+
+/* v0.6.14 / cache5689 — khóa mapping theo đúng lịch suy ra từ toàn bộ tên nguồn trong lần Tách.
+   Nguyên tắc:
+   - Không xét riêng từng tên rồi dò ngày độc lập.
+   - Gom toàn bộ tên nguồn rõ ràng trong vùng đang chọn, đối chiếu với từng lịch ngày.
+   - Chỉ khóa ngày khi có đúng một lịch chứa đầy đủ tập tên nguồn; trường hợp mơ hồ không tự đoán.
+   - Mapping chỉ cấp đúng thứ tự/vị trí nguồn cho bước xét điều kiện; mọi giới hạn và điều kiện hợp lệ cũ giữ nguyên.
+*/
+function collectExplicitScheduleHintsV0614(blocks, region){
+  const map = region === "MT" ? REGION_B_SCHEDULE : REGION_A_SCHEDULE;
+  const known = new Set(Object.values(map).flat());
+  const out = [];
+  const seen = new Set();
+  for(const block of (blocks || [])){
+    if(!block || block.generic || block.region !== region) continue;
+    for(const source of (block.sources || [])){
+      if(!known.has(source) || seen.has(source)) continue;
+      seen.add(source);
+      out.push(source);
+    }
+  }
+  return out;
+}
+
+function inferScheduleDayFromBlocksV0614(blocks, region){
+  if(region !== "MN" && region !== "MT") return null;
+  const map = region === "MT" ? REGION_B_SCHEDULE : REGION_A_SCHEDULE;
+  const hints = collectExplicitScheduleHintsV0614(blocks, region);
+  if(!hints.length) return null;
+
+  const candidates = Object.entries(map)
+    .filter(([, sources]) => hints.every(source => sources.includes(source)))
+    .map(([day, sources]) => ({day:Number(day), sources}));
+
+  if(candidates.length === 1) return candidates[0].day;
+
+  // Chỉ phá hòa khi có một lịch khớp chính xác toàn bộ tập tên nguồn.
+  const hintSet = new Set(hints);
+  const exact = candidates.filter(candidate =>
+    candidate.sources.length === hints.length &&
+    candidate.sources.every(source => hintSet.has(source))
+  );
+  return exact.length === 1 ? exact[0].day : null;
+}
+
+const buildTachBaseV0614 = buildTach;
+buildTach = function buildTachV0614(blocks){
+  const selectedRegion = activeWorkspace === "MT" ? "MT" : activeWorkspace === "MN" ? "MN" : null;
+  const inferredDay = inferScheduleDayFromBlocksV0614(blocks, selectedRegion);
+  if(inferredDay == null) return buildTachBaseV0614(blocks);
+
+  // Toàn bộ lần Tách dùng chung một mapping ngày; không cho từng tên tự nhảy sang ngày khác.
+  const originalDayIndex = dayIndex;
+  dayIndex = function dayIndexV0614(){ return inferredDay; };
+  try{
+    return buildTachBaseV0614(blocks);
+  }finally{
+    dayIndex = originalDayIndex;
+  }
+};
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0614 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0613 || window.SEQUENCE_NEUTRAL_ENGINE_V0612 || {},
+  {
+    version:"0.6.14",
+    cache:"5689",
+    status:"MAPPING MỘT LẦN TÁCH ĐƯỢC KHÓA THEO ĐÚNG LỊCH SUY RA TỪ TOÀN BỘ TÊN NGUỒN; ĐIỀU KIỆN HỢP LỆ GIỮ NGUYÊN",
+    inferScheduleDayFromBlocks:inferScheduleDayFromBlocksV0614
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
