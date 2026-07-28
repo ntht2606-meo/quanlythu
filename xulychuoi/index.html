@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>Xử lý dữ liệu chuỗi v0.6.15</title>
+  <title>Xử lý dữ liệu chuỗi v0.6.16</title>
 
   <style data-source="style.css">
 :root{
@@ -876,7 +876,7 @@ button:disabled.press-flash-v0612,
       <textarea id="auditDetail" readonly placeholder="Dạng chữ của bảng trung gian..."></textarea>
     </section>
 
-    <footer>Xử lý dữ liệu chuỗi v0.6.15 — sửa vùng C giữ đúng từng cặp; giữ nguyên mapping và điều kiện xử lý</footer>
+    <footer>Xử lý dữ liệu chuỗi v0.6.16 — sửa vùng C và tách đúng nhóm b/xc; giữ nguyên mapping và điều kiện xử lý</footer>
   </div>
   <section id="printOverlay" class="print-overlay" hidden>
     <div class="print-overlay-bar">
@@ -1723,9 +1723,17 @@ function groupDuplicateSuffixLines(lines){
     }
     const nums = m[1].split(".").filter(Boolean);
     const suffix = m[2];
-    const firstType = (suffix.match(/^([a-z]+)/i) || [,""])[1].toLowerCase();
+    const suffixTypes = Array.from(
+      suffix.matchAll(/(?:^|\.)([a-z]+)[\d,.]+n/gi),
+      match => String(match[1] || "").toLowerCase()
+    );
     const lens = new Set(nums.map(num => String(num).length));
-    if(firstType === "da" || firstType === "dv" || lens.size !== 1){
+
+    // Không gom các cặp có DA/DV, kể cả khi DA/DV nằm sau một loại khác.
+    // Ví dụ phải giữ riêng:
+    // 27.38b2n.da1n
+    // 47.49b2n.da1n
+    if(suffixTypes.includes("da") || suffixTypes.includes("dv") || lens.size !== 1){
       out.push(line);
       return;
     }
@@ -2459,6 +2467,15 @@ function buildTach(blocks){
       return merged;
     };
 
+    const normalizeHnDaCompositeLine = line => {
+      const parsed = parseCompositeLine(line);
+      if(!parsed) return line;
+      const daTokens = parsed.tokens.filter(token => token.type === "da");
+      if(!daTokens.length) return line;
+      const otherTokens = parsed.tokens.filter(token => token.type !== "da");
+      return buildCompositeLine(parsed.numberPrefix, daTokens.concat(otherTokens));
+    };
+
     const blockNames = Object.keys(groupedByBlock).sort((a,b)=>{
       const ad = blockSources(a), bd = blockSources(b);
       if(ad.length !== bd.length) return ad.length - bd.length;
@@ -2533,7 +2550,11 @@ function buildTach(blocks){
 
       if(!lines.length) continue;
       out.push(compactMultiSourceLabel(block));
-      mergePairWithSameValueLines(groupDuplicateSuffixLines(lines), block).forEach(line => out.push(line));
+      const preparedLines = block === "HN"
+        ? lines.map(normalizeHnDaCompositeLine)
+        : lines;
+      mergePairWithSameValueLines(groupDuplicateSuffixLines(preparedLines), block)
+        .forEach(line => out.push(line));
       out.push("");
     }
     return out.join("\n").trim();
@@ -5294,7 +5315,19 @@ const LEGACY_TYPE_TOKEN_RE = "(bdao|xcdao|xcdau|xcduoi|duoi|dau|dd|dv|da|b|xc)";
 
   function splitCompositeLine(line, maxLen=MAX_LINE_LENGTH){
     const parsed = parseCompositeLine(line);
-    if(!parsed || parsed.source.length <= maxLen) return [String(line || "")];
+    if(!parsed) return [String(line || "")];
+
+    const tokenTypes = parsed.tokens.map(token => token.type);
+    const allowedFamilyTypes = new Set(["b","bdao","xc","xcdao"]);
+    const onlyPreferredFamilies = tokenTypes.every(type => allowedFamilyTypes.has(type));
+    const hasBFamily = tokenTypes.some(type => type === "b" || type === "bdao");
+    const hasXcFamily = tokenTypes.some(type => type === "xc" || type === "xcdao");
+    const forcePreferredFamilySplit = onlyPreferredFamilies && hasBFamily && hasXcFamily;
+
+    if(parsed.source.length <= maxLen && !forcePreferredFamilySplit){
+      return [String(line || "")];
+    }
+
     const segments=[];
     preferredSegments(parsed.tokens).forEach(segment=>{
       if(buildCompositeLine(parsed.numberPrefix,segment).length <= maxLen){ segments.push(segment); return; }
@@ -5306,6 +5339,10 @@ const LEGACY_TYPE_TOKEN_RE = "(bdao|xcdao|xcdau|xcduoi|duoi|dau|dd|dv|da|b|xc)";
       });
       if(cur.length) segments.push(cur);
     });
+    if(forcePreferredFamilySplit){
+      return segments.map(tokens => buildCompositeLine(parsed.numberPrefix, tokens));
+    }
+
     const packed=[]; let cur=[];
     segments.forEach(segment=>{
       const next=cur.concat(segment);
@@ -6868,19 +6905,21 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0614 = Object.assign(
 );
 window.SEQUENCE_APP_LOADED = true;
 
-/* v0.6.15 / cache5690 — sửa vùng C giữ đúng từng cặp DA khi ghép hậu tố.
-   Phạm vi:
-   - Không cho dòng thường đã gom nhiều số làm mất quan hệ từng cặp DA.
-   - Ghép hậu tố trở lại từng cặp và đưa DA lên trước.
-   - Không đổi parser, mapping, công thức, LocalStorage, Undo/Redo hoặc CSS.
+/* v0.6.16 / cache5691
+   - Vùng C: giữ riêng từng cặp có DA và đưa DA lên trước hậu tố còn lại.
+   - Tách riêng hai nhóm b/bdao và xc/xcdao, không ghép lại cùng một dòng.
+   - Không đổi mapping, công thức, dữ liệu lưu, Undo/Redo hoặc CSS.
 */
-window.SEQUENCE_NEUTRAL_ENGINE_V0615 = Object.assign(
+window.SEQUENCE_NEUTRAL_ENGINE_V0616 = Object.assign(
   {},
-  window.SEQUENCE_NEUTRAL_ENGINE_V0614 || window.SEQUENCE_NEUTRAL_ENGINE_V0613 || {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0615 ||
+  window.SEQUENCE_NEUTRAL_ENGINE_V0614 ||
+  window.SEQUENCE_NEUTRAL_ENGINE_V0613 ||
+  {},
   {
-    version:"0.6.15",
-    cache:"5690",
-    status:"VÙNG C GIỮ ĐÚNG TỪNG CẶP DA; KHÔNG GOM SAI THÀNH MỘT DÒNG NHIỀU SỐ"
+    version:"0.6.16",
+    cache:"5691",
+    status:"SỬA 2 LỖI: HN GIỮ CẶP DA; TÁCH B/BDAO KHỎI XC/XCDAO"
   }
 );
 window.SEQUENCE_APP_LOADED = true;
