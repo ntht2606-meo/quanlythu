@@ -2765,14 +2765,117 @@ function splitPrintOverlayText(text){
     amount
   };
 }
+
+function normalizePrintOnlyV0620(text){
+  const typeOrder = [
+    "bdao","xcdao","xcdau","xcduoi","duoi","dau",
+    "dd","dv","da","b","xc","b3s","b4s"
+  ];
+  const typePattern = typeOrder.join("|");
+
+  function parseLine(line){
+    const source = String(line || "").trim();
+    const head = source.match(/^([0-9]+(?:\.[0-9]+)*)([a-z].*)$/i);
+    if(!head) return null;
+
+    const prefix = head[1];
+    const suffix = head[2];
+    const tokenRe = new RegExp("\\.?(" + typePattern + ")([\\d,.]+)n", "gi");
+    const tokens = [];
+    let match;
+    let lastIndex = 0;
+
+    while((match = tokenRe.exec(suffix))){
+      if(match.index !== lastIndex) return null;
+      tokens.push({
+        type:String(match[1] || "").toLowerCase(),
+        amount:String(match[2] || "")
+      });
+      lastIndex = tokenRe.lastIndex;
+    }
+
+    if(!tokens.length || lastIndex !== suffix.length) return null;
+    return {prefix, tokens};
+  }
+
+  function build(prefix, tokens){
+    return prefix + tokens.map((token, index) =>
+      (index ? "." : "") + token.type + token.amount + "n"
+    ).join("");
+  }
+
+  let activeBlock = "";
+  const out = [];
+
+  String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .forEach(rawLine => {
+      const line = rawLine.trim();
+
+      if(/^(HN|MN|MT)$/i.test(line)){
+        activeBlock = line.toUpperCase();
+        out.push(rawLine);
+        return;
+      }
+
+      if(!/^\d/.test(line)){
+        out.push(rawLine);
+        return;
+      }
+
+      const parsed = parseLine(line);
+      if(!parsed){
+        out.push(rawLine);
+        return;
+      }
+
+      const tokens = parsed.tokens.slice();
+
+      // Chỉ trong bản In: HN có da thì đưa da lên trước.
+      if(activeBlock === "HN" && tokens.some(token => token.type === "da")){
+        const daTokens = tokens.filter(token => token.type === "da");
+        const otherTokens = tokens.filter(token => token.type !== "da");
+        out.push(build(parsed.prefix, daTokens.concat(otherTokens)));
+        return;
+      }
+
+      // Chỉ trong bản In: bung atomic rồi ráp cùng họ.
+      const allowed = new Set(["b","bdao","xc","xcdao"]);
+      const onlyFamily = tokens.every(token => allowed.has(token.type));
+      const bTokens = tokens.filter(token =>
+        token.type === "b" || token.type === "bdao"
+      );
+      const xcTokens = tokens.filter(token =>
+        token.type === "xc" || token.type === "xcdao"
+      );
+
+      if(onlyFamily && bTokens.length && xcTokens.length){
+        out.push(build(parsed.prefix, bTokens));
+        out.push(build(parsed.prefix, xcTokens));
+        return;
+      }
+
+      out.push(rawLine);
+    });
+
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 async function openPrintOverlay(btn){
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
   if(val("inputData").trim()) runAll();
-  const text = val("printOutput").trim();
-  if(!text){
+
+  const rawText = val("printOutput").trim();
+  if(!rawText){
     alert("Chưa có dữ liệu để in");
     return;
   }
+
+  // Chỉ biến đổi bản dùng để In/Sao chép.
+  // Không ghi ngược vào inputData, dữ liệu vùng hay printOutput.
+  const text = normalizePrintOnlyV0620(rawText);
 
   try{
     await navigator.clipboard.writeText(text);
@@ -6127,212 +6230,25 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0614 = Object.assign(
 );
 window.SEQUENCE_APP_LOADED = true;
 
-/* v0.6.19 / cache5694
-   CHUẨN HÓA NGAY TRÊN NGUỒN HIỂN THỊ:
-   - Mỗi dòng composite được bung thành atomic.
-   - Chỉ ráp lại cùng họ: b+bdao, xc+xcdao.
-   - HN có da: đưa da lên trước phần còn lại.
-   - Chuẩn hóa cả ô nhập hiện tại, dữ liệu vùng đã xử lý và dữ liệu vùng trong ngày.
-   - Không đổi công thức, mapping, Undo/Redo hoặc CSS.
+
+/* v0.6.20 / cache5695
+   - Khôi phục đúng quy trình: ô nhập giữ nguyên dữ liệu anh nhập tay.
+   - Không chuẩn hóa dữ liệu vùng, dữ liệu đã xử lý hoặc dữ liệu trong ngày.
+   - Chỉ khi bấm In mới:
+     + đưa DA lên trước trong dòng HN;
+     + bung atomic và ráp b+bdao, xc+xcdao.
 */
-(function(global){
-  "use strict";
-
-  const TYPE_ORDER_V0619 = [
-    "bdao","xcdao","xcdau","xcduoi","duoi","dau",
-    "dd","dv","da","b","xc","b3s","b4s"
-  ];
-
-  function parseAtomicCompositeV0619(line){
-    const source = String(line || "").trim();
-    const head = source.match(/^([0-9]+(?:\.[0-9]+)*)([a-z].*)$/i);
-    if(!head) return null;
-
-    const prefix = head[1];
-    const suffix = head[2];
-    const typePattern = TYPE_ORDER_V0619.join("|");
-    const tokenRe = new RegExp("\\.?(" + typePattern + ")([\\d,.]+)n", "gi");
-
-    const tokens = [];
-    let match;
-    let lastIndex = 0;
-
-    while((match = tokenRe.exec(suffix))){
-      if(match.index !== lastIndex) return null;
-      tokens.push({
-        type:String(match[1] || "").toLowerCase(),
-        amount:String(match[2] || ""),
-        raw:String(match[1] || "").toLowerCase() + String(match[2] || "") + "n"
-      });
-      lastIndex = tokenRe.lastIndex;
-    }
-
-    if(!tokens.length || lastIndex !== suffix.length) return null;
-    return {prefix, tokens};
+window.SEQUENCE_NEUTRAL_ENGINE_V0620 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0618 ||
+  window.SEQUENCE_NEUTRAL_ENGINE_V0617 ||
+  window.SEQUENCE_NEUTRAL_ENGINE_V0614 ||
+  {},
+  {
+    version:"0.6.20",
+    cache:"5695",
+    status:"GIỮ NGUYÊN INPUT; CHỈ CHUẨN HÓA KHI BẤM IN",
+    normalizePrintOnly:normalizePrintOnlyV0620
   }
-
-  function buildAtomicCompositeV0619(prefix, tokens){
-    return String(prefix || "") + (tokens || []).map((token, index) =>
-      (index ? "." : "") + token.type + token.amount + "n"
-    ).join("");
-  }
-
-  function normalizeCompositeLineV0619(line, region){
-    const parsed = parseAtomicCompositeV0619(line);
-    if(!parsed) return [String(line || "")];
-
-    const tokens = parsed.tokens.slice();
-
-    // HN: DA đứng trước các loại còn lại trong cùng một dòng/cặp.
-    if(region === "HN" && tokens.some(token => token.type === "da")){
-      const da = tokens.filter(token => token.type === "da");
-      const rest = tokens.filter(token => token.type !== "da");
-      return [buildAtomicCompositeV0619(parsed.prefix, da.concat(rest))];
-    }
-
-    const allowedFamily = new Set(["b","bdao","xc","xcdao"]);
-    const onlyFamilyTokens = tokens.every(token => allowedFamily.has(token.type));
-    const bTokens = tokens.filter(token => token.type === "b" || token.type === "bdao");
-    const xcTokens = tokens.filter(token => token.type === "xc" || token.type === "xcdao");
-
-    // Bung atomic trước, chỉ ráp lại cùng họ sau.
-    if(onlyFamilyTokens && bTokens.length && xcTokens.length){
-      return [
-        buildAtomicCompositeV0619(parsed.prefix, bTokens),
-        buildAtomicCompositeV0619(parsed.prefix, xcTokens)
-      ];
-    }
-
-    return [buildAtomicCompositeV0619(parsed.prefix, tokens)];
-  }
-
-  function normalizeTextByAtomicFamilyV0619(text, region){
-    const lines = String(text || "").replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
-    const out = [];
-
-    lines.forEach(line => {
-      const trimmed = line.trim();
-
-      // Giữ nguyên tiêu đề, ngày, dòng trống và mọi dòng không bắt đầu bằng số.
-      if(!trimmed || !/^\d/.test(trimmed)){
-        out.push(line);
-        return;
-      }
-
-      normalizeCompositeLineV0619(trimmed, region).forEach(item => out.push(item));
-    });
-
-    return out.join("\n").replace(/\n{3,}/g,"\n\n").trim();
-  }
-
-  // Chuẩn hóa ngay nguồn ô nhập. Đây là điểm bản trước còn thiếu:
-  // runAll đọc dữ liệu nhưng không ghi kết quả chuẩn hóa trở lại ô hiển thị.
-  const baseCurrentInputDataV0619 =
-    typeof global.currentInputData === "function"
-      ? global.currentInputData
-      : function(){ return typeof val === "function" ? val("inputData") : ""; };
-
-  global.currentInputData = function currentInputDataV0619(){
-    const raw = baseCurrentInputDataV0619.apply(this, arguments);
-    const region = global.activeWorkspace || (typeof activeWorkspace !== "undefined" ? activeWorkspace : "MN");
-    const normalized = normalizeTextByAtomicFamilyV0619(raw, region);
-
-    if(typeof val === "function" && typeof setVal === "function"){
-      const shown = val("inputData");
-      if(shown !== normalized){
-        setVal("inputData", normalized);
-        if(typeof saveActiveWorkspaceInput === "function"){
-          saveActiveWorkspaceInput();
-        }
-      }
-    }
-    return normalized;
-  };
-
-  // Chuẩn hóa dữ liệu đã xử lý khi đọc và ghi để dữ liệu cũ không tái xuất hiện.
-  if(typeof global.readProcessedSplitStorage === "function"){
-    const baseReadProcessedV0619 = global.readProcessedSplitStorage;
-    global.readProcessedSplitStorage = function readProcessedSplitStorageV0619(region){
-      const targetRegion = region || global.activeWorkspace ||
-        (typeof activeWorkspace !== "undefined" ? activeWorkspace : "MN");
-      const raw = baseReadProcessedV0619.apply(this, arguments);
-      return normalizeTextByAtomicFamilyV0619(raw, targetRegion);
-    };
-  }
-
-  if(typeof global.writeProcessedSplitStorage === "function"){
-    const baseWriteProcessedV0619 = global.writeProcessedSplitStorage;
-    global.writeProcessedSplitStorage = function writeProcessedSplitStorageV0619(text, region){
-      const targetRegion = region || global.activeWorkspace ||
-        (typeof activeWorkspace !== "undefined" ? activeWorkspace : "MN");
-      const normalized = normalizeTextByAtomicFamilyV0619(text, targetRegion);
-      return baseWriteProcessedV0619.call(this, normalized, targetRegion);
-    };
-  }
-
-  // Chuẩn hóa dữ liệu trong ngày khi đọc, để bản cũ đã lưu cũng hiển thị đúng.
-  if(typeof global.readDailyRegionInputV0598 === "function"){
-    const baseReadDailyV0619 = global.readDailyRegionInputV0598;
-    global.readDailyRegionInputV0598 = function readDailyRegionInputV0619(region){
-      const targetRegion = region || global.activeWorkspace ||
-        (typeof activeWorkspace !== "undefined" ? activeWorkspace : "MN");
-      const raw = baseReadDailyV0619.apply(this, arguments);
-      return normalizeTextByAtomicFamilyV0619(raw, targetRegion);
-    };
-  }
-
-  // Chuẩn hóa ngay khi tải/chuyển vùng, kể cả dữ liệu đang giữ trong SESSION_WORKSPACE_INPUTS.
-  function normalizeVisibleInputV0619(){
-    try{
-      if(typeof val !== "function" || typeof setVal !== "function") return;
-      const region = global.activeWorkspace ||
-        (typeof activeWorkspace !== "undefined" ? activeWorkspace : "MN");
-      const raw = val("inputData");
-      if(!raw.trim()) return;
-      const normalized = normalizeTextByAtomicFamilyV0619(raw, region);
-      if(raw !== normalized){
-        setVal("inputData", normalized);
-        if(typeof saveActiveWorkspaceInput === "function") saveActiveWorkspaceInput();
-      }
-    }catch(err){
-      console.error(err);
-    }
-  }
-
-  global.normalizeTextByAtomicFamilyV0619 = normalizeTextByAtomicFamilyV0619;
-  global.normalizeVisibleInputV0619 = normalizeVisibleInputV0619;
-
-  if(typeof global.loadWorkspaceInput === "function"){
-    const baseLoadWorkspaceV0619 = global.loadWorkspaceInput;
-    global.loadWorkspaceInput = function loadWorkspaceInputV0619(region){
-      const result = baseLoadWorkspaceV0619.apply(this, arguments);
-      normalizeVisibleInputV0619();
-      return result;
-    };
-  }
-
-  global.addEventListener("DOMContentLoaded", function(){
-    setTimeout(function(){
-      normalizeVisibleInputV0619();
-      if(typeof runAll === "function" && typeof val === "function" && val("inputData").trim()){
-        runAll();
-      }
-    }, 0);
-  });
-
-  global.SEQUENCE_NEUTRAL_ENGINE_V0619 = Object.assign(
-    {},
-    global.SEQUENCE_NEUTRAL_ENGINE_V0618 ||
-    global.SEQUENCE_NEUTRAL_ENGINE_V0617 ||
-    global.SEQUENCE_NEUTRAL_ENGINE_V0614 ||
-    {},
-    {
-      version:"0.6.19",
-      cache:"5694",
-      status:"CHUẨN HÓA NGAY Ô NHẬP VÀ KHO DỮ LIỆU; ATOMIC TRƯỚC RÁP CÙNG HỌ SAU",
-      normalizeTextByAtomicFamily:normalizeTextByAtomicFamilyV0619
-    }
-  );
-
-  global.SEQUENCE_APP_LOADED = true;
-})(typeof window !== "undefined" ? window : globalThis);
+);
+window.SEQUENCE_APP_LOADED = true;
