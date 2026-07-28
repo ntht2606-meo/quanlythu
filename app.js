@@ -828,9 +828,17 @@ function groupDuplicateSuffixLines(lines){
     }
     const nums = m[1].split(".").filter(Boolean);
     const suffix = m[2];
-    const firstType = (suffix.match(/^([a-z]+)/i) || [,""])[1].toLowerCase();
+    const suffixTypes = Array.from(
+      suffix.matchAll(/(?:^|\.)([a-z]+)[\d,.]+n/gi),
+      match => String(match[1] || "").toLowerCase()
+    );
     const lens = new Set(nums.map(num => String(num).length));
-    if(firstType === "da" || firstType === "dv" || lens.size !== 1){
+
+    // Không gom các cặp có DA/DV, kể cả khi DA/DV nằm sau một loại khác.
+    // Ví dụ phải giữ riêng:
+    // 27.38b2n.da1n
+    // 47.49b2n.da1n
+    if(suffixTypes.includes("da") || suffixTypes.includes("dv") || lens.size !== 1){
       out.push(line);
       return;
     }
@@ -1462,12 +1470,88 @@ function buildTach(blocks){
       });
       return lines;
     };
-    const mergePairWithSameValueLines = lines => {
+    const mergePairWithSameValueLines = (lines, block="") => {
+      const pairEntries = [];
       const pairByValues = new Map();
+
       lines.forEach((line, idx) => {
         const m = String(line || "").match(/^([0-9]+(?:\.[0-9]+)+)da[\d,.]+n$/i);
-        if(m) pairByValues.set(m[1], { line, idx });
+        if(!m) return;
+        const nums = m[1].split(".").filter(Boolean);
+        const entry = {line, idx, values:m[1], nums};
+        pairEntries.push(entry);
+        pairByValues.set(m[1], entry);
       });
+
+      // Vùng C: khi một dòng thường đã bị gom nhiều số nhưng các cặp DA vẫn
+      // còn tách riêng, ghép hậu tố thường trở lại đúng từng cặp.
+      // Ví dụ:
+      // 27.47.73.83b2n + 27.73da1n + 47.83da1n
+      // => 27.73da1n.b2n + 47.83da1n.b2n
+      if(block === "HN" && pairEntries.length){
+        const consumed = new Set();
+        const merged = [];
+
+        lines.forEach((line, idx) => {
+          if(consumed.has(idx)) return;
+          if(pairEntries.some(entry => entry.idx === idx)) return;
+
+          const m = String(line || "").match(/^([0-9]+(?:\.[0-9]+)*)([a-z].*)$/i);
+          if(!m){
+            merged.push(line);
+            return;
+          }
+
+          const suffix = m[2];
+          const suffixLower = suffix.toLowerCase();
+          if(suffixLower.startsWith("da") || suffixLower.startsWith("dv")){
+            merged.push(line);
+            return;
+          }
+
+          const remaining = m[1].split(".").filter(Boolean);
+          const usedPositions = new Set();
+          const matchedPairs = [];
+
+          pairEntries.forEach(entry => {
+            if(consumed.has(entry.idx)) return;
+            const localPositions = [];
+            let valid = true;
+
+            entry.nums.forEach(num => {
+              const pos = remaining.findIndex((value, position) =>
+                value === num && !usedPositions.has(position) && !localPositions.includes(position)
+              );
+              if(pos < 0) valid = false;
+              else localPositions.push(pos);
+            });
+
+            if(valid){
+              localPositions.forEach(position => usedPositions.add(position));
+              matchedPairs.push(entry);
+            }
+          });
+
+          if(!matchedPairs.length){
+            merged.push(line);
+            return;
+          }
+
+          matchedPairs.forEach(entry => {
+            merged.push(entry.line + "." + suffix);
+            consumed.add(entry.idx);
+          });
+
+          const leftover = remaining.filter((_, position) => !usedPositions.has(position));
+          if(leftover.length) merged.push(leftover.join(".") + suffix);
+        });
+
+        pairEntries.forEach(entry => {
+          if(!consumed.has(entry.idx)) merged.push(entry.line);
+        });
+
+        return merged;
+      }
 
       const consumed = new Set();
       const merged = [];
@@ -1486,6 +1570,81 @@ function buildTach(blocks){
         merged.push(line);
       });
       return merged;
+    };
+
+    const parseLocalCompositeLine = line => {
+      const source = String(line || "").trim();
+      const head = source.match(/^([0-9]+(?:\.[0-9]+)*)([a-z].*)$/i);
+      if(!head) return null;
+
+      const numberPrefix = head[1];
+      const suffixPart = head[2];
+      const tokenRe = /\.?([a-z]+)([\d,.]+)n/gi;
+      const tokens = [];
+      let match;
+      let consumed = "";
+
+      while((match = tokenRe.exec(suffixPart))){
+        const type = String(match[1] || "").toLowerCase();
+        const amount = String(match[2] || "");
+        tokens.push({type, amount, raw:type + amount + "n"});
+        consumed += match[0];
+      }
+
+      if(!tokens.length || consumed.replace(/^\./, "") !== suffixPart.replace(/^\./, "")){
+        return null;
+      }
+      return {numberPrefix, tokens};
+    };
+
+    const buildLocalCompositeLine = (numberPrefix, tokens) =>
+      numberPrefix + (tokens || []).map((token, index) =>
+        (index ? "." : "") + token.raw
+      ).join("");
+
+    const normalizeHnDaCompositeLine = line => {
+      const parsed = parseLocalCompositeLine(line);
+      if(!parsed) return line;
+
+      const daTokens = parsed.tokens.filter(token => token.type === "da");
+      if(!daTokens.length) return line;
+
+      const otherTokens = parsed.tokens.filter(token => token.type !== "da");
+      return buildLocalCompositeLine(
+        parsed.numberPrefix,
+        daTokens.concat(otherTokens)
+      );
+    };
+
+    const splitPreferredFamilyLine = line => {
+      const parsed = parseLocalCompositeLine(line);
+      if(!parsed) return [line];
+
+      const types = parsed.tokens.map(token => token.type);
+      const allowed = new Set(["b", "bdao", "xc", "xcdao"]);
+      const onlyPreferred = types.every(type => allowed.has(type));
+      const hasB = types.some(type => type === "b" || type === "bdao");
+      const hasXc = types.some(type => type === "xc" || type === "xcdao");
+
+      if(!onlyPreferred || !hasB || !hasXc){
+        return [line];
+      }
+
+      const bTokens = parsed.tokens.filter(token =>
+        token.type === "b" || token.type === "bdao"
+      );
+      const xcTokens = parsed.tokens.filter(token =>
+        token.type === "xc" || token.type === "xcdao"
+      );
+
+      const result = [];
+      if(bTokens.length){
+        result.push(buildLocalCompositeLine(parsed.numberPrefix, bTokens));
+      }
+      if(xcTokens.length){
+        result.push(buildLocalCompositeLine(parsed.numberPrefix, xcTokens));
+      }
+      return result;
     };
 
     const blockNames = Object.keys(groupedByBlock).sort((a,b)=>{
@@ -1562,7 +1721,13 @@ function buildTach(blocks){
 
       if(!lines.length) continue;
       out.push(compactMultiSourceLabel(block));
-      mergePairWithSameValueLines(groupDuplicateSuffixLines(lines)).forEach(line => out.push(line));
+      const preparedLines = block === "HN"
+        ? lines.map(normalizeHnDaCompositeLine)
+        : lines;
+      mergePairWithSameValueLines(groupDuplicateSuffixLines(preparedLines), block)
+        .forEach(line => {
+          splitPreferredFamilyLine(line).forEach(splitLine => out.push(splitLine));
+        });
       out.push("");
     }
     return out.join("\n").trim();
@@ -2474,25 +2639,33 @@ function clearRun(){
   setVal("matchedValue","0");
   saveActiveWorkspaceInput();
 }
-async function copyText(id){
+async function copyText(id, btn){
   const text = val(id);
+  const fallback = btn ? (btn.dataset.actionFallbackV0612 || btn.textContent || "Sao chép") : "Sao chép";
   try{
     await navigator.clipboard.writeText(text);
+    if(btn) flashActionButton(btn, "✓ Đã sao chép", fallback);
     return true;
   }catch(e){
+    if(btn) flashActionButton(btn, "Không sao chép được", fallback, "error");
     alert("Không sao chép tự động được, anh chọn nội dung rồi sao chép thủ công nhé");
     return false;
   }
 }
-function flashActionButton(btn, text, fallback){
+function flashActionButton(btn, text, fallback, state="success"){
   if(!btn) return;
-  const old = btn.textContent || fallback || "";
+  const original = btn.dataset.actionFallbackV0612 || btn.textContent || fallback || "";
+  btn.dataset.actionFallbackV0612 = original;
+  if(btn._actionFlashTimerV0612) clearTimeout(btn._actionFlashTimerV0612);
   btn.textContent = text;
-  btn.classList.add("saved");
-  setTimeout(()=>{
-    btn.textContent = old || fallback || "";
-    btn.classList.remove("saved");
-  }, 900);
+  btn.classList.remove("saved", "action-failed-v0612");
+  btn.classList.add(state === "error" ? "action-failed-v0612" : "saved");
+  btn._actionFlashTimerV0612 = setTimeout(()=>{
+    btn.textContent = btn.dataset.actionFallbackV0612 || fallback || original;
+    btn.classList.remove("saved", "action-failed-v0612");
+    delete btn.dataset.actionFallbackV0612;
+    btn._actionFlashTimerV0612 = null;
+  }, 1000);
 }
 async function copyPrintFast(btn){
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -4315,7 +4488,19 @@ const LEGACY_TYPE_TOKEN_RE = "(bdao|xcdao|xcdau|xcduoi|duoi|dau|dd|dv|da|b|xc)";
 
   function splitCompositeLine(line, maxLen=MAX_LINE_LENGTH){
     const parsed = parseCompositeLine(line);
-    if(!parsed || parsed.source.length <= maxLen) return [String(line || "")];
+    if(!parsed) return [String(line || "")];
+
+    const tokenTypes = parsed.tokens.map(token => token.type);
+    const allowedFamilyTypes = new Set(["b","bdao","xc","xcdao"]);
+    const onlyPreferredFamilies = tokenTypes.every(type => allowedFamilyTypes.has(type));
+    const hasBFamily = tokenTypes.some(type => type === "b" || type === "bdao");
+    const hasXcFamily = tokenTypes.some(type => type === "xc" || type === "xcdao");
+    const forcePreferredFamilySplit = onlyPreferredFamilies && hasBFamily && hasXcFamily;
+
+    if(parsed.source.length <= maxLen && !forcePreferredFamilySplit){
+      return [String(line || "")];
+    }
+
     const segments=[];
     preferredSegments(parsed.tokens).forEach(segment=>{
       if(buildCompositeLine(parsed.numberPrefix,segment).length <= maxLen){ segments.push(segment); return; }
@@ -4327,6 +4512,10 @@ const LEGACY_TYPE_TOKEN_RE = "(bdao|xcdao|xcdau|xcduoi|duoi|dau|dd|dv|da|b|xc)";
       });
       if(cur.length) segments.push(cur);
     });
+    if(forcePreferredFamilySplit){
+      return segments.map(tokens => buildCompositeLine(parsed.numberPrefix, tokens));
+    }
+
     const packed=[]; let cur=[];
     segments.forEach(segment=>{
       const next=cur.concat(segment);
@@ -5696,3 +5885,216 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0610 = Object.assign(
 );
 window.SEQUENCE_APP_LOADED = true;
 
+
+/* v0.6.11 / cache5686 — đồng bộ giao diện với QuanLyThuong OS; không đổi logic xử lý */
+window.SEQUENCE_NEUTRAL_ENGINE_V0611 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0610 || window.SEQUENCE_NEUTRAL_ENGINE_V0609 || {},
+  {
+    version:"0.6.11",
+    cache:"5686",
+    status:"GIAO DIỆN ĐỒNG BỘ QUANLYTHUONG OS; GIỮ NGUYÊN LOGIC v0.6.10"
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+
+/* v0.6.12 / cache5687 — phản hồi nháy màu cho mọi nút; giữ nguyên logic v0.6.11 */
+const PRESS_FEEDBACK_SELECTOR_V0612 = "button, .portal-link, [role='button']";
+let lastPressControlV0612 = null;
+let lastPressAtV0612 = 0;
+
+function findPressControlV0612(target){
+  const control = target && target.closest ? target.closest(PRESS_FEEDBACK_SELECTOR_V0612) : null;
+  if(!control) return null;
+  if(control.matches("button:disabled") || control.getAttribute("aria-disabled") === "true") return null;
+  return control;
+}
+
+function triggerPressFeedbackV0612(control){
+  if(!control) return;
+  control.classList.remove("press-flash-v0612");
+  // Buộc trình duyệt khởi động lại animation khi anh bấm liên tiếp cùng một nút.
+  void control.offsetWidth;
+  control.classList.add("press-flash-v0612");
+  if(control._pressFeedbackTimerV0612) clearTimeout(control._pressFeedbackTimerV0612);
+  control._pressFeedbackTimerV0612 = setTimeout(()=>{
+    control.classList.remove("press-flash-v0612");
+    control._pressFeedbackTimerV0612 = null;
+  }, 380);
+}
+
+function handlePointerPressV0612(event){
+  const control = findPressControlV0612(event.target);
+  if(!control) return;
+  lastPressControlV0612 = control;
+  lastPressAtV0612 = Date.now();
+  triggerPressFeedbackV0612(control);
+}
+
+function handleKeyboardOrSyntheticClickV0612(event){
+  const control = findPressControlV0612(event.target);
+  if(!control) return;
+  const wasJustPressed = control === lastPressControlV0612 && (Date.now() - lastPressAtV0612) < 650;
+  if(!wasJustPressed) triggerPressFeedbackV0612(control);
+}
+
+(function installPressFeedbackV0612(){
+  if(typeof document === "undefined") return;
+  if(window.PointerEvent){
+    document.addEventListener("pointerdown", handlePointerPressV0612, true);
+  }else{
+    document.addEventListener("touchstart", handlePointerPressV0612, {capture:true, passive:true});
+    document.addEventListener("mousedown", handlePointerPressV0612, true);
+  }
+  document.addEventListener("click", handleKeyboardOrSyntheticClickV0612, true);
+})();
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0612 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0611 || window.SEQUENCE_NEUTRAL_ENGINE_V0610 || {},
+  {
+    version:"0.6.12",
+    cache:"5687",
+    status:"MỌI NÚT NHÁY MÀU NGAY KHI NHẬN LỆNH; NÚT SAO CHÉP BÁO KẾT QUẢ RÕ RÀNG",
+    triggerPressFeedback:triggerPressFeedbackV0612
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+
+/* v0.6.13 / cache5688 — ưu tiên lịch ngày hiện tại khi tên nguồn xuất hiện ở nhiều ngày.
+   Phạm vi khóa:
+   - Chỉ sửa bước phân giải ngữ cảnh lịch cho sourceHints.
+   - Tên có trong lịch hôm nay phải dùng lịch hôm nay trước khi dò ngày khác.
+   - Sau khi xác định đúng ngữ cảnh, buildTach vẫn xét đầy đủ mọi điều kiện cũ.
+   - Không tự động đưa nguồn vào Đã xử lý và không thay giới hạn/phạm vi loại dữ liệu.
+*/
+function pickDayForGeneric(region, count, sourceHints=[]){
+  const map = region === "MT" ? REGION_B_SCHEDULE : REGION_A_SCHEDULE;
+  const hints = Array.from(new Set((sourceHints || []).filter(Boolean)));
+  const today = dayIndex();
+  const todaySources = map[today] || [];
+
+  if(hints.length){
+    const todayMatches = todaySources.length >= count &&
+      hints.every(source => todaySources.includes(source));
+    if(todayMatches) return today;
+
+    for(const [d, arr] of Object.entries(map)){
+      if(arr.length >= count && hints.every(source => arr.includes(source))){
+        return parseInt(d, 10);
+      }
+    }
+  }
+
+  if(todaySources.length >= count) return today;
+  for(const [d, arr] of Object.entries(map)){
+    if(arr.length >= count) return parseInt(d, 10);
+  }
+  return today;
+}
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0613 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0612 || window.SEQUENCE_NEUTRAL_ENGINE_V0611 || {},
+  {
+    version:"0.6.13",
+    cache:"5688",
+    status:"TÊN NGUỒN TRÙNG NHIỀU NGÀY ƯU TIÊN LỊCH HÔM NAY; ĐIỀU KIỆN XỬ LÝ GIỮ NGUYÊN",
+    pickDayForGeneric
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+
+
+/* v0.6.14 / cache5689 — khóa mapping theo đúng lịch suy ra từ toàn bộ tên nguồn trong lần Tách.
+   Nguyên tắc:
+   - Không xét riêng từng tên rồi dò ngày độc lập.
+   - Gom toàn bộ tên nguồn rõ ràng trong vùng đang chọn, đối chiếu với từng lịch ngày.
+   - Chỉ khóa ngày khi có đúng một lịch chứa đầy đủ tập tên nguồn; trường hợp mơ hồ không tự đoán.
+   - Mapping chỉ cấp đúng thứ tự/vị trí nguồn cho bước xét điều kiện; mọi giới hạn và điều kiện hợp lệ cũ giữ nguyên.
+*/
+function collectExplicitScheduleHintsV0614(blocks, region){
+  const map = region === "MT" ? REGION_B_SCHEDULE : REGION_A_SCHEDULE;
+  const known = new Set(Object.values(map).flat());
+  const out = [];
+  const seen = new Set();
+  for(const block of (blocks || [])){
+    if(!block || block.generic || block.region !== region) continue;
+    for(const source of (block.sources || [])){
+      if(!known.has(source) || seen.has(source)) continue;
+      seen.add(source);
+      out.push(source);
+    }
+  }
+  return out;
+}
+
+function inferScheduleDayFromBlocksV0614(blocks, region){
+  if(region !== "MN" && region !== "MT") return null;
+  const map = region === "MT" ? REGION_B_SCHEDULE : REGION_A_SCHEDULE;
+  const hints = collectExplicitScheduleHintsV0614(blocks, region);
+  if(!hints.length) return null;
+
+  const candidates = Object.entries(map)
+    .filter(([, sources]) => hints.every(source => sources.includes(source)))
+    .map(([day, sources]) => ({day:Number(day), sources}));
+
+  if(candidates.length === 1) return candidates[0].day;
+
+  // Chỉ phá hòa khi có một lịch khớp chính xác toàn bộ tập tên nguồn.
+  const hintSet = new Set(hints);
+  const exact = candidates.filter(candidate =>
+    candidate.sources.length === hints.length &&
+    candidate.sources.every(source => hintSet.has(source))
+  );
+  return exact.length === 1 ? exact[0].day : null;
+}
+
+const buildTachBaseV0614 = buildTach;
+buildTach = function buildTachV0614(blocks){
+  const selectedRegion = activeWorkspace === "MT" ? "MT" : activeWorkspace === "MN" ? "MN" : null;
+  const inferredDay = inferScheduleDayFromBlocksV0614(blocks, selectedRegion);
+  if(inferredDay == null) return buildTachBaseV0614(blocks);
+
+  // Toàn bộ lần Tách dùng chung một mapping ngày; không cho từng tên tự nhảy sang ngày khác.
+  const originalDayIndex = dayIndex;
+  dayIndex = function dayIndexV0614(){ return inferredDay; };
+  try{
+    return buildTachBaseV0614(blocks);
+  }finally{
+    dayIndex = originalDayIndex;
+  }
+};
+
+window.SEQUENCE_NEUTRAL_ENGINE_V0614 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0613 || window.SEQUENCE_NEUTRAL_ENGINE_V0612 || {},
+  {
+    version:"0.6.14",
+    cache:"5689",
+    status:"MAPPING MỘT LẦN TÁCH ĐƯỢC KHÓA THEO ĐÚNG LỊCH SUY RA TỪ TOÀN BỘ TÊN NGUỒN; ĐIỀU KIỆN HỢP LỆ GIỮ NGUYÊN",
+    inferScheduleDayFromBlocks:inferScheduleDayFromBlocksV0614
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+
+/* v0.6.17 / cache5692
+   Sửa khóa theo mẫu thực tế:
+   1. Loại bỏ lỗi chạy do gọi parser ngoài phạm vi.
+   2. Áp dụng tách b/bdao và xc/xcdao ngay trong kết quả chạy chính.
+   3. Giữ riêng từng cặp HN có DA và đưa DA lên trước hậu tố còn lại.
+   Không đổi mapping, công thức, dữ liệu lưu, Undo/Redo hoặc CSS.
+*/
+window.SEQUENCE_NEUTRAL_ENGINE_V0617 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0616 ||
+  window.SEQUENCE_NEUTRAL_ENGINE_V0615 ||
+  window.SEQUENCE_NEUTRAL_ENGINE_V0614 ||
+  {},
+  {
+    version:"0.6.17",
+    cache:"5692",
+    status:"SỬA LỖI CHẠY VÀ TÁCH NHÓM B/XC NGAY TRONG KẾT QUẢ CHÍNH"
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
