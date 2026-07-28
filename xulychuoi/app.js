@@ -1572,13 +1572,87 @@ function buildTach(blocks){
       return merged;
     };
 
+    const parseLocalCompositeLine = line => {
+      const source = String(line || "").trim();
+      const head = source.match(/^([0-9]+(?:\.[0-9]+)*)([a-z].*)$/i);
+      if(!head) return null;
+
+      const numberPrefix = head[1];
+      const suffixPart = head[2];
+      const tokenRe = /\.?([a-z]+)([\d,.]+)n/gi;
+      const tokens = [];
+      let match;
+      let consumed = "";
+
+      while((match = tokenRe.exec(suffixPart))){
+        const type = String(match[1] || "").toLowerCase();
+        const amount = String(match[2] || "");
+        tokens.push({type, amount, raw:type + amount + "n"});
+        consumed += match[0];
+      }
+
+      if(!tokens.length || consumed.replace(/^\./, "") !== suffixPart.replace(/^\./, "")){
+        return null;
+      }
+      return {numberPrefix, tokens};
+    };
+
+    const buildLocalCompositeLine = (numberPrefix, tokens) =>
+      numberPrefix + (tokens || []).map((token, index) =>
+        (index ? "." : "") + token.raw
+      ).join("");
+
     const normalizeHnDaCompositeLine = line => {
-      const parsed = parseCompositeLine(line);
+      const parsed = parseLocalCompositeLine(line);
       if(!parsed) return line;
+
       const daTokens = parsed.tokens.filter(token => token.type === "da");
       if(!daTokens.length) return line;
+
       const otherTokens = parsed.tokens.filter(token => token.type !== "da");
-      return buildCompositeLine(parsed.numberPrefix, daTokens.concat(otherTokens));
+      return buildLocalCompositeLine(
+        parsed.numberPrefix,
+        daTokens.concat(otherTokens)
+      );
+    };
+
+    const splitPreferredFamilyLine = line => {
+      const parsed = parseLocalCompositeLine(line);
+      if(!parsed) return [line];
+
+      // Bung atomic thật sự trước.
+      const atomic = parsed.tokens.map(token => ({
+        numberPrefix:parsed.numberPrefix,
+        token
+      }));
+
+      const allowed = new Set(["b", "bdao", "xc", "xcdao"]);
+      if(!atomic.every(item => allowed.has(item.token.type))){
+        return [line];
+      }
+
+      const bAtomic = atomic.filter(item =>
+        item.token.type === "b" || item.token.type === "bdao"
+      );
+      const xcAtomic = atomic.filter(item =>
+        item.token.type === "xc" || item.token.type === "xcdao"
+      );
+
+      if(!bAtomic.length || !xcAtomic.length){
+        return [line];
+      }
+
+      // Ráp lại chỉ trong cùng họ.
+      return [
+        buildLocalCompositeLine(
+          parsed.numberPrefix,
+          bAtomic.map(item => item.token)
+        ),
+        buildLocalCompositeLine(
+          parsed.numberPrefix,
+          xcAtomic.map(item => item.token)
+        )
+      ];
     };
 
     const blockNames = Object.keys(groupedByBlock).sort((a,b)=>{
@@ -1613,8 +1687,49 @@ function buildTach(blocks){
       Object.keys(normalGroups).forEach(num => {
         const groupItems = normalGroups[num];
         if(groupItems.length > 1){
-          const line = renderNormalLine(groupItems);
-          if(line) normalLineItems.push({line, num});
+          // ATOMIC FIRST:
+          // Tách từng loại thành phần tử độc lập, sau đó chỉ ráp lại cùng họ.
+          // Ví dụ đầu vào nội bộ:
+          // 833b0,5n
+          // 833bdao0,5n
+          // 833xc3n
+          // 833xcdao1n
+          // Kết quả:
+          // 833b0,5n.bdao0,5n
+          // 833xc3n.xcdao1n
+          const familyOf = type => {
+            if(type === "b" || type === "bdao") return "b";
+            if(type === "xc" || type === "xcdao") return "xc";
+            return type;
+          };
+
+          const atomicItems = groupItems.map(item => ({
+            nums:(item.nums || []).slice(),
+            type:item.type,
+            n:item.n
+          }));
+
+          const byFamily = new Map();
+          atomicItems.forEach(item => {
+            const family = familyOf(item.type);
+            if(!byFamily.has(family)) byFamily.set(family, []);
+            byFamily.get(family).push(item);
+          });
+
+          const familyOrder = ["b", "xc"];
+          Array.from(byFamily.entries())
+            .sort((a,b) => {
+              const ai = familyOrder.indexOf(a[0]);
+              const bi = familyOrder.indexOf(b[0]);
+              const ar = ai < 0 ? 999 : ai;
+              const br = bi < 0 ? 999 : bi;
+              if(ar !== br) return ar - br;
+              return String(a[0]).localeCompare(String(b[0]));
+            })
+            .forEach(([, familyItems]) => {
+              const line = renderNormalLine(familyItems);
+              if(line) normalLineItems.push({line, num});
+            });
           return;
         }
         const item = groupItems[0];
@@ -1659,7 +1774,9 @@ function buildTach(blocks){
         ? lines.map(normalizeHnDaCompositeLine)
         : lines;
       mergePairWithSameValueLines(groupDuplicateSuffixLines(preparedLines), block)
-        .forEach(line => out.push(line));
+        .forEach(line => {
+          splitPreferredFamilyLine(line).forEach(splitLine => out.push(splitLine));
+        });
       out.push("");
     }
     return out.join("\n").trim();
@@ -2557,7 +2674,7 @@ function runAll(){
     const matchPack = evaluateMatches(rows, referencePack);
     setVal("matchedValue", matchPack.total ? money(matchPack.total) : "0");
     setVal("remainingValue", money(total - matchPack.total));
-    setVal( buildMatchReport(matchPack));
+    setVal("parsedReference", buildMatchReport(matchPack));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, matchPack));
   }catch(err){
     console.error(err);
@@ -3323,7 +3440,7 @@ function runAll(){
     // Chế độ trace: không dùng ô Phù hợp tổng để đếm hit nữa, tránh hiểu nhầm 1 con/2 con.
     setVal("matchedValue", "Xem bảng");
     setVal("remainingValue", money(total));
-    setVal( buildMatchReport(pack, referencePack, rows));
+    setVal("parsedReference", buildMatchReport(pack, referencePack, rows));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, pack));
   }catch(err){
     console.error(err);
@@ -3529,7 +3646,7 @@ function runAll(){
 
     setVal("matchedValue", money(pack.total || 0));
     setVal("remainingValue", money(total - (pack.total || 0)));
-    setVal( buildMatchReport(pack, referencePack, rows));
+    setVal("parsedReference", buildMatchReport(pack, referencePack, rows));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, pack));
   }catch(err){
     console.error(err);
@@ -3656,7 +3773,7 @@ function runAll(){
 
     setVal("matchedValue", "Xem dữ liệu");
     setVal("remainingValue", money(total));
-    setVal( buildMatchReport(pack, referencePack, rows));
+    setVal("parsedReference", buildMatchReport(pack, referencePack, rows));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, pack));
   }catch(err){
     console.error(err);
@@ -3740,7 +3857,7 @@ function runAll(){
 
     setVal("matchedValue", "Xem dữ liệu");
     setVal("remainingValue", money(total));
-    setVal( buildMatchReport(pack));
+    setVal("parsedReference", buildMatchReport(pack));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, pack));
   }catch(err){
     console.error(err);
@@ -3888,7 +4005,7 @@ function runAll(){
 
     setVal("matchedValue", money(pack.total || 0));
     setVal("remainingValue", money(total - (pack.total || 0)));
-    setVal( buildMatchReport(pack));
+    setVal("parsedReference", buildMatchReport(pack));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, pack));
   }catch(err){
     console.error(err);
@@ -4645,7 +4762,7 @@ function runAll(){
     const pack = evaluateMatches(rows, referencePack);
     setVal("matchedValue", money(pack.total || 0));
     setVal("remainingValue", money(total - (pack.total || 0)));
-    setVal( buildMatchReport(pack));
+    setVal("parsedReference", buildMatchReport(pack));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, pack));
   }catch(err){
     console.error(err);
@@ -4762,7 +4879,7 @@ function runAll(){
     const pack = evaluateMatches(rows, referencePack);
     setVal("matchedValue", money(pack.total || 0));
     setVal("remainingValue", money(total - (pack.total || 0)));
-    setVal( buildMatchReport(pack));
+    setVal("parsedReference", buildMatchReport(pack));
     setVal("auditDetail", buildMatchStepTrace(rows, referencePack, pack));
   }catch(err){
     console.error(err);
@@ -6010,21 +6127,25 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0614 = Object.assign(
 );
 window.SEQUENCE_APP_LOADED = true;
 
-/* v0.6.16 / cache5691
-   - Vùng C: giữ riêng từng cặp có DA và đưa DA lên trước hậu tố còn lại.
-   - Tách riêng hai nhóm b/bdao và xc/xcdao, không ghép lại cùng một dòng.
-   - Không đổi mapping, công thức, dữ liệu lưu, Undo/Redo hoặc CSS.
+/* v0.6.18 / cache5693
+   - Atomic trước, ráp cùng họ sau:
+     b + bdao
+     xc + xcdao
+   - Không cho b/xc/bdao/xcdao nằm chung một dòng.
+   - Sửa toàn bộ lời gọi setVal thiếu id làm lỗi Giá trị đầu vào.
+   - Giữ nguyên mapping, công thức, lưu vùng, Undo/Redo và CSS.
 */
-window.SEQUENCE_NEUTRAL_ENGINE_V0616 = Object.assign(
+window.SEQUENCE_NEUTRAL_ENGINE_V0618 = Object.assign(
   {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0617 ||
+  window.SEQUENCE_NEUTRAL_ENGINE_V0616 ||
   window.SEQUENCE_NEUTRAL_ENGINE_V0615 ||
   window.SEQUENCE_NEUTRAL_ENGINE_V0614 ||
-  window.SEQUENCE_NEUTRAL_ENGINE_V0613 ||
   {},
   {
-    version:"0.6.16",
-    cache:"5691",
-    status:"SỬA 2 LỖI: HN GIỮ CẶP DA; TÁCH B/BDAO KHỎI XC/XCDAO"
+    version:"0.6.18",
+    cache:"5693",
+    status:"ATOMIC TRƯỚC RÁP CÙNG HỌ SAU; SỬA LỖI GIÁ TRỊ ĐẦU VÀO"
   }
 );
 window.SEQUENCE_APP_LOADED = true;
