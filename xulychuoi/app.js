@@ -5186,11 +5186,24 @@ function clearSelectedDailyRegionV0598(btn){
   const region = normalizeDailyRegionV0598(selectedDailyRegionV0598);
   try{
     localStorage.removeItem(dailyRegionInputKeyV0598(region));
+    localStorage.removeItem(processedSplitRegionKeyV0600(region));
+    localStorage.removeItem(workspaceKey(region));
+    localStorage.removeItem(LEGACY_STORAGE_KEYS.workspacePrefix + region);
   }catch(e){
     console.error(e);
   }
+
+  SESSION_WORKSPACE_INPUTS[region] = "";
   setVal("dailyRegionOutput", "");
-  if(btn) flashActionButton(btn, "Đã xóa", "Xóa");
+
+  if(region === activeWorkspace){
+    setVal("inputData", "");
+    setVal("processedOutput", "");
+    setVal("unchangedOutput", "");
+    clearCalculatedViewsKeepProcessed();
+  }
+
+  if(btn) flashActionButton(btn, "Đã xóa sạch", "Xóa");
 }
 
 function clearLegacyUnassignedDailyInputV0598(btn){
@@ -6231,7 +6244,7 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0614 = Object.assign(
 window.SEQUENCE_APP_LOADED = true;
 
 
-/* v0.6.20 / cache5695
+/* v0.6.21 / cache5696
    - Khôi phục đúng quy trình: ô nhập giữ nguyên dữ liệu anh nhập tay.
    - Không chuẩn hóa dữ liệu vùng, dữ liệu đã xử lý hoặc dữ liệu trong ngày.
    - Chỉ khi bấm In mới:
@@ -6246,7 +6259,7 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0620 = Object.assign(
   {},
   {
     version:"0.6.20",
-    cache:"5695",
+    cache:"5696",
     status:"GIỮ NGUYÊN INPUT; CHỈ CHUẨN HÓA KHI BẤM IN",
     normalizePrintOnly:normalizePrintOnlyV0620
   }
