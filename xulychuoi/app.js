@@ -2693,6 +2693,15 @@ async function copyText(id, btn){
   const fallback = btn ? (btn.dataset.actionFallbackV0612 || btn.textContent || "Sao chép") : "Sao chép";
   try{
     await navigator.clipboard.writeText(text);
+
+    // v0.6.22: Sau khi sao chép phần Giữ nguyên thành công,
+    // xóa phần tương ứng đang còn trong ô đầu vào bên ngoài.
+    // Giữ nguyên nội dung đang hiển thị tại vùng Giữ nguyên để người dùng đối chiếu.
+    if(id === "unchangedOutput"){
+      setVal("inputData", "");
+      saveActiveWorkspaceInput();
+    }
+
     if(btn) flashActionButton(btn, "✓ Đã sao chép", fallback);
     return true;
   }catch(e){
@@ -6251,17 +6260,33 @@ window.SEQUENCE_APP_LOADED = true;
      + đưa DA lên trước trong dòng HN;
      + bung atomic và ráp b+bdao, xc+xcdao.
 */
-window.SEQUENCE_NEUTRAL_ENGINE_V0620 = Object.assign(
+window.SEQUENCE_NEUTRAL_ENGINE_V0621 = Object.assign(
   {},
   window.SEQUENCE_NEUTRAL_ENGINE_V0618 ||
   window.SEQUENCE_NEUTRAL_ENGINE_V0617 ||
   window.SEQUENCE_NEUTRAL_ENGINE_V0614 ||
   {},
   {
-    version:"0.6.20",
+    version:"0.6.21",
     cache:"5696",
     status:"GIỮ NGUYÊN INPUT; CHỈ CHUẨN HÓA KHI BẤM IN",
     normalizePrintOnly:normalizePrintOnlyV0620
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+
+
+/* v0.6.22 / cache5697
+   - Khi sao chép thành công vùng Giữ nguyên, xóa dữ liệu còn lại trong ô đầu vào.
+   - Không xóa vùng Giữ nguyên đang hiển thị; không ảnh hưởng các nút Sao chép khác.
+*/
+window.SEQUENCE_NEUTRAL_ENGINE_V0622 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0621 || {},
+  {
+    version:"0.6.22",
+    cache:"5697",
+    status:"SAO CHÉP GIỮ NGUYÊN THÀNH CÔNG SẼ DỌN Ô ĐẦU VÀO"
   }
 );
 window.SEQUENCE_APP_LOADED = true;
