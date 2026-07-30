@@ -1620,38 +1620,33 @@ function buildTach(blocks){
       const parsed = parseLocalCompositeLine(line);
       if(!parsed) return [line];
 
-      // Bung atomic thật sự trước.
-      const atomic = parsed.tokens.map(token => ({
-        numberPrefix:parsed.numberPrefix,
-        token
-      }));
+      const maxLen = 24;
+      const isThreeTokenNumber = /^\d{3}$/.test(parsed.numberPrefix);
+      if(!isThreeTokenNumber || String(line).length <= maxLen){
+        return [line];
+      }
 
       const allowed = new Set(["b", "bdao", "xc", "xcdao"]);
-      if(!atomic.every(item => allowed.has(item.token.type))){
+      if(!parsed.tokens.every(token => allowed.has(token.type))){
         return [line];
       }
 
-      const bAtomic = atomic.filter(item =>
-        item.token.type === "b" || item.token.type === "bdao"
+      const bTokens = parsed.tokens.filter(token =>
+        token.type === "b" || token.type === "bdao"
       );
-      const xcAtomic = atomic.filter(item =>
-        item.token.type === "xc" || item.token.type === "xcdao"
+      const xcTokens = parsed.tokens.filter(token =>
+        token.type === "xc" || token.type === "xcdao"
       );
 
-      if(!bAtomic.length || !xcAtomic.length){
+      // Trường hợp đặc biệt duy nhất vì khổ in 24 ký tự:
+      // 000b…n.bdao…n / 000xc…n.xcdao…n.
+      if(!bTokens.length || !xcTokens.length){
         return [line];
       }
 
-      // Ráp lại chỉ trong cùng họ.
       return [
-        buildLocalCompositeLine(
-          parsed.numberPrefix,
-          bAtomic.map(item => item.token)
-        ),
-        buildLocalCompositeLine(
-          parsed.numberPrefix,
-          xcAtomic.map(item => item.token)
-        )
+        buildLocalCompositeLine(parsed.numberPrefix, bTokens),
+        buildLocalCompositeLine(parsed.numberPrefix, xcTokens)
       ];
     };
 
@@ -1687,49 +1682,10 @@ function buildTach(blocks){
       Object.keys(normalGroups).forEach(num => {
         const groupItems = normalGroups[num];
         if(groupItems.length > 1){
-          // ATOMIC FIRST:
-          // Tách từng loại thành phần tử độc lập, sau đó chỉ ráp lại cùng họ.
-          // Ví dụ đầu vào nội bộ:
-          // 833b0,5n
-          // 833bdao0,5n
-          // 833xc3n
-          // 833xcdao1n
-          // Kết quả:
-          // 833b0,5n.bdao0,5n
-          // 833xc3n.xcdao1n
-          const familyOf = type => {
-            if(type === "b" || type === "bdao") return "b";
-            if(type === "xc" || type === "xcdao") return "xc";
-            return type;
-          };
-
-          const atomicItems = groupItems.map(item => ({
-            nums:(item.nums || []).slice(),
-            type:item.type,
-            n:item.n
-          }));
-
-          const byFamily = new Map();
-          atomicItems.forEach(item => {
-            const family = familyOf(item.type);
-            if(!byFamily.has(family)) byFamily.set(family, []);
-            byFamily.get(family).push(item);
-          });
-
-          const familyOrder = ["b", "xc"];
-          Array.from(byFamily.entries())
-            .sort((a,b) => {
-              const ai = familyOrder.indexOf(a[0]);
-              const bi = familyOrder.indexOf(b[0]);
-              const ar = ai < 0 ? 999 : ai;
-              const br = bi < 0 ? 999 : bi;
-              if(ar !== br) return ar - br;
-              return String(a[0]).localeCompare(String(b[0]));
-            })
-            .forEach(([, familyItems]) => {
-              const line = renderNormalLine(familyItems);
-              if(line) normalLineItems.push({line, num});
-            });
+          // Atomic chỉ dùng để xét nội bộ. Khi trả output, ráp lại toàn bộ hậu tố
+          // của cùng một số trước; bước giới hạn 24 ký tự xử lý sau.
+          const line = renderNormalLine(groupItems);
+          if(line) normalLineItems.push({line, num});
           return;
         }
         const item = groupItems[0];
@@ -2860,7 +2816,15 @@ function normalizePrintOnlyV0620(text){
         token.type === "xc" || token.type === "xcdao"
       );
 
-      if(onlyFamily && bTokens.length && xcTokens.length){
+      const completeLine = build(parsed.prefix, tokens);
+      const isThreeTokenNumber = /^\d{3}$/.test(parsed.prefix);
+      if(
+        isThreeTokenNumber &&
+        completeLine.length > 24 &&
+        onlyFamily &&
+        bTokens.length &&
+        xcTokens.length
+      ){
         out.push(build(parsed.prefix, bTokens));
         out.push(build(parsed.prefix, xcTokens));
         return;
@@ -4492,7 +4456,7 @@ const SEQ_COMPACT_PREFIX_BUILD = "Xử lý dữ liệu chuỗi v0.5.78 — rút 
 
   const VERSION = "0.5.94";
   const CACHE = "5671";
-  const MAX_LINE_LENGTH = 20;
+  const MAX_LINE_LENGTH = 24;
   // Các mã ngắn dưới đây chỉ được giữ để đọc dữ liệu cũ; logic nội bộ và giao diện dùng thuật ngữ trung tính.
 const LEGACY_TYPE_TOKEN_RE = "(bdao|xcdao|xcdau|xcduoi|duoi|dau|dd|dv|da|b|xc)";
 
@@ -4656,9 +4620,11 @@ const LEGACY_TYPE_TOKEN_RE = "(bdao|xcdao|xcdau|xcduoi|duoi|dau|dd|dv|da|b|xc)";
     const onlyPreferredFamilies = tokenTypes.every(type => allowedFamilyTypes.has(type));
     const hasBFamily = tokenTypes.some(type => type === "b" || type === "bdao");
     const hasXcFamily = tokenTypes.some(type => type === "xc" || type === "xcdao");
-    const forcePreferredFamilySplit = onlyPreferredFamilies && hasBFamily && hasXcFamily;
+    const forcePreferredFamilySplit = /^\d{3}$/.test(parsed.numberPrefix) &&
+      parsed.source.length > maxLen &&
+      onlyPreferredFamilies && hasBFamily && hasXcFamily;
 
-    if(parsed.source.length <= maxLen && !forcePreferredFamilySplit){
+    if(parsed.source.length <= maxLen){
       return [String(line || "")];
     }
 
@@ -6287,6 +6253,23 @@ window.SEQUENCE_NEUTRAL_ENGINE_V0622 = Object.assign(
     version:"0.6.22",
     cache:"5697",
     status:"SAO CHÉP GIỮ NGUYÊN THÀNH CÔNG SẼ DỌN Ô ĐẦU VÀO"
+  }
+);
+window.SEQUENCE_APP_LOADED = true;
+
+/* v0.6.23 / cache5698
+   - Nguồn phục hồi: Web CURRENT v0.6.22 / cache5697.
+   - Atomic vẫn dùng để xử lý nội bộ nhưng output ráp lại theo cùng số.
+   - Chỉ số 3 token có dòng hoàn chỉnh vượt 24 ký tự mới tách b/bdao và xc/xcdao.
+   - Số 2 token giữ chung b/dau/duoi; số 4 token giữ chung b/bdao.
+*/
+window.SEQUENCE_NEUTRAL_ENGINE_V0623 = Object.assign(
+  {},
+  window.SEQUENCE_NEUTRAL_ENGINE_V0622 || {},
+  {
+    version:"0.6.23",
+    cache:"5698",
+    status:"RÁP OUTPUT THEO CÙNG SỐ; CHỈ TÁCH SỐ 3 TOKEN KHI VƯỢT 24 KÝ TỰ"
   }
 );
 window.SEQUENCE_APP_LOADED = true;
